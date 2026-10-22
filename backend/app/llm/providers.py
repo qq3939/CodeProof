@@ -183,8 +183,9 @@ class OpenAICompatibleProvider:
 
         emb = OpenAIEmbeddings(
             model=self.s.embedding_model,
-            base_url=self.s.embedding_base_url or None,
-            api_key=self.s.embedding_api_key or "none",  # type: ignore[arg-type]
+            # 很多服务商对话和嵌入是同一个地址和 Key，没单独配就沿用对话模型的
+            base_url=self.s.embedding_base_url or self.s.llm_base_url or None,
+            api_key=self.s.embedding_api_key or self.s.llm_api_key or "none",  # type: ignore[arg-type]
             dimensions=self.s.embedding_dim if "text-embedding-3" in self.s.embedding_model else None,
             check_embedding_ctx_length=False,  # 非 OpenAI 服务商不认 tiktoken 分好的 token 数组
             max_retries=2,

@@ -18,8 +18,8 @@ frontend/dist/
 !.env.example
 
 # 仓库存储目录与评测临时产物
-data/
-repos/
+/data/
+/repos/
 eval/runs/
 eval/.cache/
 

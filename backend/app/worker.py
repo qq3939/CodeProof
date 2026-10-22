@@ -39,3 +39,4 @@ class WorkerSettings:
     max_jobs = 4
     job_timeout = 1800  # 大仓库首次分析 + 出题可能要十几分钟
     max_tries = 1  # 失败后由用户或运维页手动重试，避免对外部模型重复计费
+    health_check_interval = 30  # Compose 的 healthcheck 用 `arq --check` 读这个心跳

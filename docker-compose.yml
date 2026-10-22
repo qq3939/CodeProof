@@ -1,0 +1,102 @@
+# 一键启动：docker compose up -d --build，然后打开 http://localhost:8090
+# 端口按 CLAUDE.md 约定：前端 8090、API 8000、Postgres 5433、Redis 6380（宿主机侧）。
+
+x-backend: &backend
+  build: ./backend
+  image: project-b-backend:latest
+  env_file: .env
+  environment:
+    # 容器内部互相访问用服务名和容器端口，覆盖 .env 里给本机开发用的 localhost 地址
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-projectb}:${POSTGRES_PASSWORD:-projectb}@postgres:5432/${POSTGRES_DB:-projectb}
+    REDIS_URL: redis://redis:6379/0
+    REPO_STORAGE_DIR: /data/repos
+    QUEUE_MODE: arq
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-projectb}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-projectb}
+      POSTGRES_DB: ${POSTGRES_DB:-projectb}
+    ports: ["5433:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["6380:6379"]
+    volumes: [redisdata:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # 只跑一次的迁移：api 和 worker 都等它成功结束再启动，避免两边同时建表
+  migrate:
+    <<: *backend
+    command: ["alembic", "upgrade", "head"]
+    restart: "no"
+
+  api:
+    <<: *backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-projectb}:${POSTGRES_PASSWORD:-projectb}@postgres:5432/${POSTGRES_DB:-projectb}
+      REDIS_URL: redis://redis:6379/0
+      REPO_STORAGE_DIR: /data/repos
+      QUEUE_MODE: arq
+      # api 只读挂载仓库目录：克隆、清理都只在 worker 里做（SPEC 12.2），
+      # api 读到的快照被清理了就投递 checkout 任务让 worker 重新拉取
+      REPO_STORAGE_READONLY: "true"
+    volumes: ["repos:/data/repos:ro"]
+    ports: ["8000:8000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  worker:
+    <<: *backend
+    command: ["arq", "app.worker.WorkerSettings"]
+    volumes: ["repos:/data/repos"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "arq", "--check", "app.worker.WorkerSettings"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  frontend:
+    build: ./frontend
+    image: project-b-frontend:latest
+    ports: ["8090:80"]
+    depends_on:
+      api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  repos:
