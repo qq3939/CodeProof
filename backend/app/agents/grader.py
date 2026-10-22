@@ -44,7 +44,7 @@ WEIGHT = {"hit": 1.0, "partial": 0.5, "miss": 0.0}
 
 def needs_rejudge(out: GradeOut, pass_score: int) -> bool:
     partial = sum(1 for p in out.points if p.verdict == "partial")
-    return abs(out.score - pass_score) <= 10 or (out.points and partial / len(out.points) >= 0.5)
+    return abs(out.score - pass_score) <= 10 or (bool(out.points) and partial / len(out.points) >= 0.5)
 
 
 def merge_runs(runs: list[GradeOut], n_points: int) -> tuple[list[dict[str, Any]], float, int]:

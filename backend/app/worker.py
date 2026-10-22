@@ -29,6 +29,9 @@ async def cleanup_cron(ctx: dict[str, Any]) -> None:
 
 async def startup(ctx: dict[str, Any]) -> None:
     setup_logging(get_settings().log_level)
+    from app.sessions.graph import setup_checkpointer
+
+    await setup_checkpointer()  # 改动理解任务会在 worker 里启动面试官图
 
 
 class WorkerSettings:

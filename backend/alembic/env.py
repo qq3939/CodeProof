@@ -5,11 +5,10 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+import app.models  # noqa: F401 —— 导入模型，让 metadata 里有全部表
 from alembic import context
-
 from app.core.config import get_settings
 from app.core.db import Base
-import app.models  # noqa: F401 —— 导入模型，让 metadata 里有全部表
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -31,9 +30,8 @@ config.set_main_option("sqlalchemy.url", get_settings().database_url)
 
 def include_object(obj, name, type_, reflected, compare_to):  # type: ignore[no-untyped-def]
     # LangGraph 的检查点表由 AsyncPostgresSaver.setup() 自己管理，迁移时忽略
-    if type_ == "table" and reflected and compare_to is None:
-        return False
-    return True
+    return not (type_ == "table" and reflected and compare_to is None)
+
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

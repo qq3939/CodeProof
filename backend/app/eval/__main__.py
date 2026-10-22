@@ -1,8 +1,8 @@
 """评测命令行：
 
-    uv run python -m app.eval run --suite small
-    uv run python -m app.eval run --suite petclinic --retrieval hybrid --baseline
-    uv run python -m app.eval check --suite small   # 只检查数据集格式（CI 用）
+uv run python -m app.eval run --suite small
+uv run python -m app.eval run --suite petclinic --retrieval hybrid --baseline
+uv run python -m app.eval check --suite small   # 只检查数据集格式（CI 用）
 """
 
 from __future__ import annotations
@@ -44,8 +44,13 @@ def main() -> None:
                 problems.append(f"{a['id']} 没有人工标注")
             elif q and len(lab["points"]) != len(q["key_points"]):
                 problems.append(f"{a['id']} 标注的要点数和题目不一致")
-        print(json.dumps({"questions": len(s.questions), "answers": len(s.answers), "problems": problems},
-                         ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {"questions": len(s.questions), "answers": len(s.answers), "problems": problems},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         sys.exit(1 if problems else 0)
 
     from app.eval.runner import run

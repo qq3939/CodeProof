@@ -335,7 +335,7 @@ class Sandbox:
         return specs
 
     async def call(self, name: str, args: dict[str, Any], node: str = "tool") -> str:
-        fn = {
+        table: dict[str, Callable[..., Awaitable[str]]] = {
             "list_dir": self.list_dir,
             "glob": self.glob,
             "grep": self.grep,
@@ -346,7 +346,8 @@ class Sandbox:
             "get_chain": self.get_chain,
             "search_kb": self.search_kb,
             "vector_search": self.vector_search,
-        }.get(name)
+        }
+        fn = table.get(name)
         t0 = time.perf_counter()
         if self.on_tool is not None:
             await self.on_tool(name, args)

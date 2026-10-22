@@ -23,17 +23,32 @@ FIXTURE = Path(__file__).parent / "fixtures" / "mini-feed"
 _TMP = Path(tempfile.mkdtemp(prefix="pb-test-"))
 
 # 必须在 import app 之前设置：models.py 在导入时读取向量维度
-os.environ.update({
-    "ENV": "test", "LLM_PROVIDER": "fake", "QUEUE_MODE": "inline", "ALLOW_FILE_REPOS": "true",
-    "ENABLE_DEV_LOGIN": "true", "EMBEDDING_DIM": "256", "REPO_STORAGE_DIR": str(_TMP / "repos"),
-    "RETRIEVAL_MODE": "hybrid", "ADMIN_GITHUB_LOGINS": "admin", "LOG_LEVEL": "WARNING", "RATE_LIMIT_PER_MINUTE": "100000",
-    "LLM_PRICE_TABLE": '{"fake-strong": {"input": 2.0, "output": 8.0}, "fake-fast": {"input": 0.5, "output": 1.0}}',
-})
+os.environ.update(
+    {
+        "ENV": "test",
+        "LLM_PROVIDER": "fake",
+        "QUEUE_MODE": "inline",
+        "ALLOW_FILE_REPOS": "true",
+        "ENABLE_DEV_LOGIN": "true",
+        "EMBEDDING_DIM": "256",
+        "REPO_STORAGE_DIR": str(_TMP / "repos"),
+        "RETRIEVAL_MODE": "hybrid",
+        "ADMIN_GITHUB_LOGINS": "admin",
+        "LOG_LEVEL": "WARNING",
+        "RATE_LIMIT_PER_MINUTE": "100000",
+        "LLM_PRICE_TABLE": '{"fake-strong": {"input": 2.0, "output": 8.0}, "fake-fast": {"input": 0.5, "output": 1.0}}',
+    }
+)
 
 
 def _git(cwd: Path, *args: str) -> str:
-    env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t", "GIT_COMMITTER_NAME": "t",
-           "GIT_COMMITTER_EMAIL": "t@t"}
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_NAME": "t",
+        "GIT_AUTHOR_EMAIL": "t@t",
+        "GIT_COMMITTER_NAME": "t",
+        "GIT_COMMITTER_EMAIL": "t@t",
+    }
     return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout.strip()
 
 
@@ -87,9 +102,9 @@ def infra() -> Iterator[dict[str, str]]:
 
 @pytest.fixture(scope="session")
 async def app_ready(infra: dict[str, str]) -> AsyncIterator[None]:
-    from alembic import command
     from alembic.config import Config
 
+    from alembic import command
     from app.core.db import reset_engine
     from app.core.redis import get_redis, reset_redis
 
@@ -98,6 +113,16 @@ async def app_ready(infra: dict[str, str]) -> AsyncIterator[None]:
     # 每次测试从干净的库开始：先降级再升级（env.py 内部用 asyncio.run，所以放到线程里执行）
     await asyncio.to_thread(command.downgrade, cfg, "base")
     await asyncio.to_thread(command.upgrade, cfg, "head")
+    # 检查点表不归 Alembic 管，也删掉重建：保证每次都覆盖"全新数据库第一次启动"这条路径
+    from sqlalchemy import text
+
+    from app.core.db import get_engine
+    from app.sessions.graph import setup_checkpointer
+
+    async with get_engine().begin() as conn:
+        for t in ("checkpoint_writes", "checkpoint_blobs", "checkpoints", "checkpoint_migrations"):
+            await conn.execute(text(f"DROP TABLE IF EXISTS {t}"))
+    await setup_checkpointer()
     await reset_engine()
     await reset_redis()
     await get_redis().flushdb()

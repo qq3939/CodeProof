@@ -462,10 +462,24 @@ async def get_graph() -> CompiledStateGraph:
             kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
         )
         await _pool.open()
-        saver = AsyncPostgresSaver(_pool)  # type: ignore[arg-type]
-        await saver.setup()  # 幂等：建检查点表
-        _graph = build_graph().compile(checkpointer=saver)
+        # 这里不调用 saver.setup()：建表放在进程启动时做（见 setup_checkpointer）
+        _graph = build_graph().compile(checkpointer=AsyncPostgresSaver(_pool))  # type: ignore[arg-type]
     return _graph
+
+
+async def setup_checkpointer() -> None:
+    """建 LangGraph 检查点表（幂等）。api 和 worker 启动时各调用一次。
+
+    不能放在第一次请求里懒执行：setup() 里有 CREATE INDEX CONCURRENTLY，它要等数据库里
+    所有已开始的事务结束；而请求自己的 SQLAlchemy 会话此时正开着事务，于是自己等自己，
+    请求永远卡住（见 pitfalls）。用一条独立的 autocommit 连接、在没有请求的时候执行就没问题。
+    """
+    from psycopg import AsyncConnection
+
+    async with await AsyncConnection.connect(
+        get_settings().sync_database_url, autocommit=True, prepare_threshold=0, row_factory=dict_row
+    ) as conn:
+        await AsyncPostgresSaver(conn).setup()  # type: ignore[arg-type]
 
 
 async def close_checkpointer() -> None:

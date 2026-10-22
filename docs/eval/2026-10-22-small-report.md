@@ -1,8 +1,8 @@
 # 评测报告：small（2026-10-22）
 
-- 运行 id：`9194df66-36ef-495f-bd35-fffa33ec28ac`
+- 运行 id：`27e283df-2f0e-43dc-8b7d-76adb2d4f6ab`
 - 模型：fake / 强 `fake-strong` / 快 `fake-fast`
-- 检索模式：agentic, vector, hybrid；基线对比：是
+- 检索模式：agentic, vector, hybrid；基线对比：否
 - 数据：6 题、23 个回答、6 条简历说法、5 个注入样本
 
 > ⚠️ 这次用的是假模型（LLM_PROVIDER=fake），只能说明流程跑通、输出格式正确，指标数值没有参考意义。
@@ -25,20 +25,10 @@
 | cohen_kappa | 0.793 |
 | score_mae | 8.65 |
 | stability_3_runs | 1.0 |
-| latency_s | 0.41 |
+| latency_s | 0.3 |
 | tokens | 34036 |
 | cost | 0.0 |
 | calls | 41 |
-
-## 基线：通用 Agent + 提示词
-
-| 指标 | 值 |
-|---|---|
-| score_mae | 25.39 |
-| latency_s | 1.61 |
-| tokens | 23978 |
-| cost | 0.0 |
-| calls | 92 |
 
 ## 简历核验
 
@@ -64,7 +54,7 @@
 | 指标 | 值 |
 |---|---|
 | loc | 242 |
-| first_analysis_s_per_kloc | 6.355 |
+| first_analysis_s_per_kloc | 6.103 |
 | first_analysis_tokens_per_kloc | 110876.0 |
 | incremental_runs | 0 |
 | incremental_tokens_saved | 0 |
@@ -76,14 +66,13 @@
 
 | 模式 | recall@5 | 工具调用 | Token | 耗时(s) |
 |---|---|---|---|---|
-| agentic | 0.833 | 20 | 1080 | 0.31 |
-| vector | 0.722 | 6 | 0 | 0.04 |
-| hybrid | 0.944 | 26 | 1080 | 0.41 |
+| agentic | 0.833 | 20 | 1080 | 0.29 |
+| vector | 0.722 | 6 | 0 | 0.03 |
+| hybrid | 0.944 | 26 | 1080 | 0.32 |
 
 ## 结论
 
 - 阅卷要点一致率 0.897，kappa 0.793，总分平均绝对误差 8.65。
-- 和基线比，总分误差 8.65 vs 25.39，本系统更接近人工标注。
 - 检索召回最高的是 hybrid（recall@5=0.944）。
 - 注入样本被执行比例 0.0（目标 0）。
 

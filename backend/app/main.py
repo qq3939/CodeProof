@@ -26,8 +26,9 @@ logger = logging.getLogger("app.access")
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     setup_logging(get_settings().log_level)
-    from app.sessions.graph import close_checkpointer
+    from app.sessions.graph import close_checkpointer, setup_checkpointer
 
+    await setup_checkpointer()
     yield
     await close_checkpointer()
 

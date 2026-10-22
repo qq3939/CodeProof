@@ -29,9 +29,13 @@ def _model() -> tuple[CodeModel, dict[str, str]]:
 
 def _profile() -> tuple[CodeModel, dict]:
     m, src = _model()
-    prof = build_profile(m, [TextFile("pom.xml", (FIX / "pom.xml").read_text())],
-                         [TextFile("src/main/resources/application.yml", (FIX / "src/main/resources/application.yml").read_text())],
-                         src, {"java": len(src)})
+    prof = build_profile(
+        m,
+        [TextFile("pom.xml", (FIX / "pom.xml").read_text())],
+        [TextFile("src/main/resources/application.yml", (FIX / "src/main/resources/application.yml").read_text())],
+        src,
+        {"java": len(src)},
+    )
     return m, prof
 
 
@@ -94,7 +98,8 @@ def test_profile_endpoints_usages_chains() -> None:
 def test_config_values_redacted() -> None:
     keys = parse_config_keys([TextFile("application.yml", (FIX / "src/main/resources/application.yml").read_text())])
     assert {"key": "spring.datasource.password", "value": "***"}.items() <= next(
-        k for k in keys if k["key"] == "spring.datasource.password").items()
+        k for k in keys if k["key"] == "spring.datasource.password"
+    ).items()
     assert all(k["value"] == "***" for k in keys)
     _, prof = _profile()
     assert "super-secret-password" not in str(prof)
@@ -112,12 +117,18 @@ def test_candidates_find_self_invocation_risk() -> None:
             assert ev["end_line"] - ev["start_line"] < 40
 
 
-@pytest.mark.parametrize("raw,url", [
-    ("https://github.com/Spring-Projects/Spring-Petclinic.git", "https://github.com/spring-projects/spring-petclinic"),
-    ("git@github.com:A/B.git", "https://github.com/a/b"),
-    ("github.com/a/b/", "https://github.com/a/b"),
-    ("http://github.com/a/b", "https://github.com/a/b"),
-])
+@pytest.mark.parametrize(
+    "raw,url",
+    [
+        (
+            "https://github.com/Spring-Projects/Spring-Petclinic.git",
+            "https://github.com/spring-projects/spring-petclinic",
+        ),
+        ("git@github.com:A/B.git", "https://github.com/a/b"),
+        ("github.com/a/b/", "https://github.com/a/b"),
+        ("http://github.com/a/b", "https://github.com/a/b"),
+    ],
+)
 def test_normalize_url(raw: str, url: str) -> None:
     assert normalize_repo_url(raw).url == url
 

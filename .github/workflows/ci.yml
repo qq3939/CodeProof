@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    # 测试用真 Postgres（带 pgvector）和 Redis，模型用 fake，不需要任何 API Key（SPEC 18.2）
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env: { POSTGRES_USER: projectb, POSTGRES_PASSWORD: projectb, POSTGRES_DB: projectb }
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U projectb" --health-interval 5s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports: ["6380:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 3s --health-retries 20
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://projectb:projectb@localhost:5433/projectb
+      TEST_REDIS_URL: redis://localhost:6380/1
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      - name: 安装 ripgrep（沙箱的 grep 工具）
+        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: 安装依赖
+        run: uv sync --frozen
+      - name: ruff
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: mypy（core / agents / tools）
+        run: uv run mypy
+      - name: pytest
+        run: uv run pytest -q
+      - name: 评测集格式检查
+        run: uv run python -m app.eval check --suite small
+      - name: 小评测集（fake 模型，确认评测流程能跑通）
+        env:
+          ENV: test
+          LLM_PROVIDER: fake
+          QUEUE_MODE: inline
+          ALLOW_FILE_REPOS: "true"
+          DATABASE_URL: postgresql+asyncpg://projectb:projectb@localhost:5433/projectb
+          REDIS_URL: redis://localhost:6380/2
+          REPO_STORAGE_DIR: /tmp/pb-repos
+        run: |
+          uv run alembic upgrade head
+          uv run python -m app.eval run --suite small
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eval-report
+          path: docs/eval/
+          if-no-files-found: ignore
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: 类型检查 + 构建
+        run: npm run build
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 构建镜像
+        run: cp .env.example .env && docker compose build

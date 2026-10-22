@@ -391,4 +391,10 @@ def _baseline(p: dict[str, Any]) -> dict[str, Any]:
     from app.core.text import containment
 
     score = int(round(100 * containment(p.get("answer", ""), p.get("code", ""))))
-    return {"points": [], "contradictions": [], "score": max(0, min(100, score)), "feedback": "基线判分", "review_topics": []}
+    return {
+        "points": [],
+        "contradictions": [],
+        "score": max(0, min(100, score)),
+        "feedback": "基线判分",
+        "review_topics": [],
+    }

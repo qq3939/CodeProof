@@ -65,8 +65,9 @@ async def test_analysis_result(user_client: httpx.AsyncClient, analyzed: dict[st
 
 async def test_full_session_flow(user_client: httpx.AsyncClient, analyzed: dict[str, Any]) -> None:
     sid = analyzed["snapshot_id"]
-    r = await user_client.post("/api/sessions", json={"snapshot_id": sid, "mode": "deep_dive", "question_count": 3,
-                                                       "max_depth": 2})
+    r = await user_client.post(
+        "/api/sessions", json={"snapshot_id": sid, "mode": "deep_dive", "question_count": 3, "max_depth": 2}
+    )
     assert r.status_code == 200, r.text
     data = r.json()
     session_id = data["session"]["id"]
@@ -117,8 +118,10 @@ async def test_full_session_flow(user_client: httpx.AsyncClient, analyzed: dict[
     for it in items:
         for kp in it["key_points"]:
             ev0 = kp["evidence"][0]
-            fr = await user_client.get(f"/api/snapshots/{sid}/file",
-                                       params={"path": ev0["path"], "start": ev0["start_line"], "end": ev0["end_line"]})
+            fr = await user_client.get(
+                f"/api/snapshots/{sid}/file",
+                params={"path": ev0["path"], "start": ev0["start_line"], "end": ev0["end_line"]},
+            )
             assert fr.status_code == 200 and fr.json()["total_lines"] >= ev0["end_line"]
     md = await user_client.get(f"/api/sessions/{session_id}/report.md")
     assert md.status_code == 200 and "# 考核报告" in md.text
@@ -156,10 +159,18 @@ async def test_concurrent_submit_creates_one_snapshot(app_ready: None) -> None:
     assert len({r.json()["snapshot_id"] for r in rs}) == 1
     assert sum(1 for r in rs if not r.json()["reused"]) == 1
     async with session_scope() as db:
-        n = (await db.execute(select(func.count()).select_from(RepoSnapshot)
-                              .where(RepoSnapshot.id == rs[0].json()["snapshot_id"]))).scalar_one()
-        jobs = (await db.execute(select(func.count()).select_from(Job).where(
-            Job.kind == "analyze", Job.args["snapshot_id"].astext == rs[0].json()["snapshot_id"]))).scalar_one()
+        n = (
+            await db.execute(
+                select(func.count()).select_from(RepoSnapshot).where(RepoSnapshot.id == rs[0].json()["snapshot_id"])
+            )
+        ).scalar_one()
+        jobs = (
+            await db.execute(
+                select(func.count())
+                .select_from(Job)
+                .where(Job.kind == "analyze", Job.args["snapshot_id"].astext == rs[0].json()["snapshot_id"])
+            )
+        ).scalar_one()
     assert n == 1 and jobs == 1
     await drain()
     for c in clients:
@@ -180,8 +191,12 @@ async def test_quota_exceeded(app_ready: None, analyzed: dict[str, Any]) -> None
 
 async def test_incremental_analysis(user_client: httpx.AsyncClient, analyzed: dict[str, Any]) -> None:
     repo = analyzed["repo_path"]
-    commit_change(repo, "src/main/java/com/example/feed/listener/LikeListener.java",
-                  'log.info("notify author of feed {}", feedId);', 'log.info("notify author {}", feedId);')
+    commit_change(
+        repo,
+        "src/main/java/com/example/feed/listener/LikeListener.java",
+        'log.info("notify author of feed {}", feedId);',
+        'log.info("notify author {}", feedId);',
+    )
     r = await user_client.post(f"/api/repos/{analyzed['repository_id']}/refresh")
     assert r.status_code == 200 and r.json()["new_commit"] is True
     await drain()

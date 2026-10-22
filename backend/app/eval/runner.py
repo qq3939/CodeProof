@@ -68,9 +68,13 @@ def load_suite(name: str) -> Suite:
     for f in sorted((p / "injection").glob("*.jsonl")) if (p / "injection").exists() else []:
         inj += _jsonl(f)
     return Suite(
-        name=name, path=p, config=json.loads((p / "suite.json").read_text(encoding="utf-8")),
-        questions=_jsonl(p / "questions.jsonl"), answers=_jsonl(p / "answers.jsonl"),
-        labels={x["answer_id"]: x for x in _jsonl(p / "labels.jsonl")}, claims=_jsonl(p / "claims.jsonl"),
+        name=name,
+        path=p,
+        config=json.loads((p / "suite.json").read_text(encoding="utf-8")),
+        questions=_jsonl(p / "questions.jsonl"),
+        answers=_jsonl(p / "answers.jsonl"),
+        labels={x["answer_id"]: x for x in _jsonl(p / "labels.jsonl")},
+        claims=_jsonl(p / "claims.jsonl"),
         injections=inj,
     )
 
@@ -80,8 +84,13 @@ def _fixture_repo(rel: str) -> str:
     src = ROOT / rel
     dest = Path(tempfile.mkdtemp(prefix="pb-eval-")) / src.name
     shutil.copytree(src, dest)
-    env = {"GIT_AUTHOR_NAME": "eval", "GIT_AUTHOR_EMAIL": "e@e", "GIT_COMMITTER_NAME": "eval",
-           "GIT_COMMITTER_EMAIL": "e@e", "PATH": "/usr/bin:/bin:/usr/local/bin"}
+    env = {
+        "GIT_AUTHOR_NAME": "eval",
+        "GIT_AUTHOR_EMAIL": "e@e",
+        "GIT_COMMITTER_NAME": "eval",
+        "GIT_COMMITTER_EMAIL": "e@e",
+        "PATH": "/usr/bin:/bin:/usr/local/bin",
+    }
     for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "eval fixture"]):
         subprocess.run(["git", *args], cwd=dest, env=env, check=True, capture_output=True)
     return f"file://{dest}"
@@ -120,9 +129,15 @@ async def prepare_snapshot(suite: Suite) -> tuple[uuid.UUID, Path]:
 
 async def _usage(job_id: str) -> dict[str, Any]:
     async with session_scope() as db:
-        row = (await db.execute(select(
-            func.coalesce(func.sum(LlmCall.prompt_tokens + LlmCall.completion_tokens), 0),
-            func.coalesce(func.sum(LlmCall.cost), 0.0), func.count()).where(LlmCall.job_id == job_id))).one()
+        row = (
+            await db.execute(
+                select(
+                    func.coalesce(func.sum(LlmCall.prompt_tokens + LlmCall.completion_tokens), 0),
+                    func.coalesce(func.sum(LlmCall.cost), 0.0),
+                    func.count(),
+                ).where(LlmCall.job_id == job_id)
+            )
+        ).one()
     return {"tokens": int(row[0]), "cost": round(float(row[1]), 6), "calls": int(row[2])}
 
 
@@ -150,8 +165,12 @@ async def eval_question_quality(suite: Suite, snap_id: uuid.UUID, sandbox: Sandb
         return ok / total if total else 0.0
 
     async with session_scope() as db:
-        bank = [{"id": str(q.id), "text": q.text, "key_points": q.key_points} for q in (await db.execute(
-            select(Question).where(Question.snapshot_id == snap_id, Question.scope.is_(None)))).scalars()]
+        bank = [
+            {"id": str(q.id), "text": q.text, "key_points": q.key_points}
+            for q in (
+                await db.execute(select(Question).where(Question.snapshot_id == snap_id, Question.scope.is_(None)))
+            ).scalars()
+        ]
     rep.metrics["question_quality"] = {
         "dataset_evidence_valid_rate": round(valid_rate(suite.questions, "dataset"), 3),
         "bank_evidence_valid_rate": round(valid_rate(bank, "bank"), 3),
@@ -192,14 +211,19 @@ async def eval_grading(suite: Suite, sandbox: Sandbox, run_id: str, rep: Report)
         runs = []
         for _ in range(3):
             out, _ = await judge(q, [a["text"]], _snippets(sandbox, q), ctx)
-            runs.append([next((p.verdict for p in out.points if p.index == i), "miss") for i in range(len(q["key_points"]))])
+            runs.append(
+                [next((p.verdict for p in out.points if p.index == i), "miss") for i in range(len(q["key_points"]))]
+            )
         stab_runs.append(M.stability(runs))
     use = await _usage(ctx.job_id or "")
     rep.metrics["grading"] = {
-        "answers": len(pred_scores), "point_agreement": round(M.agreement(pred_pts, gold_pts), 3),
-        "cohen_kappa": round(M.cohen_kappa(pred_pts, gold_pts), 3), "score_mae": round(M.mae(pred_scores, gold_scores), 2),
+        "answers": len(pred_scores),
+        "point_agreement": round(M.agreement(pred_pts, gold_pts), 3),
+        "cohen_kappa": round(M.cohen_kappa(pred_pts, gold_pts), 3),
+        "score_mae": round(M.mae(pred_scores, gold_scores), 2),
         "stability_3_runs": round(statistics.mean(stab_runs), 3) if stab_runs else None,
-        "latency_s": round(time.perf_counter() - t0, 2), **use,
+        "latency_s": round(time.perf_counter() - t0, 2),
+        **use,
     }
 
 
@@ -221,15 +245,23 @@ async def eval_baseline(suite: Suite, sandbox: Sandbox, run_id: str, rep: Report
         found = await retrieve(q["text"], restricted, ctx, mode="agentic", top_k=3)
         code = "\n\n".join(f"{h.path}:{h.start_line}\n{h.text[:1500]}" for h in found.hits)
         out, _ = await get_llm().structured(
-            task="baseline.judge", tier="strong", system=BASELINE_SYSTEM, ctx=ctx, schema=GradeOut, temperature=0,
+            task="baseline.judge",
+            tier="strong",
+            system=BASELINE_SYSTEM,
+            ctx=ctx,
+            schema=GradeOut,
+            temperature=0,
             user=f"题目：{q['text']}\n{wrap_data('code', code)}\n{wrap_data('answer', a['text'])}",
             payload={"answer": a["text"], "code": code, "question": q["text"]},
         )
         pred.append(out.score)
         gold.append(lab["score"])
     use = await _usage(ctx.job_id or "")
-    rep.metrics["baseline"] = {"score_mae": round(M.mae(pred, gold), 2), "latency_s": round(time.perf_counter() - t0, 2),
-                               **use}
+    rep.metrics["baseline"] = {
+        "score_mae": round(M.mae(pred, gold), 2),
+        "latency_s": round(time.perf_counter() - t0, 2),
+        **use,
+    }
 
 
 async def eval_retrieval(suite: Suite, sandbox: Sandbox, run_id: str, modes: list[str], rep: Report) -> None:
@@ -249,8 +281,12 @@ async def eval_retrieval(suite: Suite, sandbox: Sandbox, run_id: str, modes: lis
             if r == 0:
                 rep.fail("retrieval", f"[{mode}] {q['id']} top-5 里没有任何标准证据")
         use = await _usage(ctx.job_id or "")
-        out[mode] = {"recall@5": round(statistics.mean(recalls), 3) if recalls else 0.0, "tool_calls": calls,
-                     "latency_s": round(time.perf_counter() - t0, 2), **use}
+        out[mode] = {
+            "recall@5": round(statistics.mean(recalls), 3) if recalls else 0.0,
+            "tool_calls": calls,
+            "latency_s": round(time.perf_counter() - t0, 2),
+            **use,
+        }
     rep.metrics["retrieval"] = out
 
 
@@ -267,17 +303,24 @@ async def eval_resume(suite: Suite, snap_id: uuid.UUID, sandbox: Sandbox, run_id
     terms = list(st.get("tech", [])) + [d.split(":")[-1] for d in st.get("dependencies", [])]
     pred, gold = [], []
     for c in suite.claims:
-        claim = ResumeClaim(project_name="eval", claim_text=c["text"], claim_type=c.get("type", "tech"),
-                            entities=c.get("entities", []))
+        claim = ResumeClaim(
+            project_name="eval", claim_text=c["text"], claim_type=c.get("type", "tech"), entities=c.get("entities", [])
+        )
         v = await verify_claim(claim, sandbox, terms, ctx)
         is_false = v["verdict"] in ("not_found", "contradicted")
         pred.append(is_false)
         gold.append(bool(c["is_false"]))
         if is_false != bool(c["is_false"]):
-            rep.fail("resume", f"{c['id']}「{c['text']}」：判为 {v['verdict']}，标注为{'假' if c['is_false'] else '真'}")
+            rep.fail(
+                "resume", f"{c['id']}「{c['text']}」：判为 {v['verdict']}，标注为{'假' if c['is_false'] else '真'}"
+            )
     p, r = M.precision_recall(pred, gold)
-    rep.metrics["resume"] = {"claims": len(pred), "false_claim_precision": round(p, 3), "false_claim_recall": round(r, 3),
-                             **await _usage(ctx.job_id or "")}
+    rep.metrics["resume"] = {
+        "claims": len(pred),
+        "false_claim_precision": round(p, 3),
+        "false_claim_recall": round(r, 3),
+        **await _usage(ctx.job_id or ""),
+    }
 
 
 async def eval_security(suite: Suite, snap_id: uuid.UUID, sandbox: Sandbox, run_id: str, rep: Report) -> None:
@@ -296,20 +339,27 @@ async def eval_security(suite: Suite, snap_id: uuid.UUID, sandbox: Sandbox, run_
             out, _ = await judge(q, [inj["content"]], _snippets(sandbox, q), ctx)
             followed = out.score > inj.get("max_score", 30)
         elif inj["target"] == "resume":
-            claim = ResumeClaim(project_name="eval", claim_text=inj["content"], claim_type="tech",
-                                entities=inj.get("entities", []))
+            claim = ResumeClaim(
+                project_name="eval", claim_text=inj["content"], claim_type="tech", entities=inj.get("entities", [])
+            )
             v = await verify_claim(claim, sandbox, [], ctx)
             followed = v["verdict"] == inj.get("forbidden_verdict")
         elif inj["target"] == "code":
             async with session_scope() as db:
-                qs = (await db.execute(select(Question.text, Question.reference_md).where(
-                    Question.snapshot_id == snap_id))).all()
+                qs = (
+                    await db.execute(
+                        select(Question.text, Question.reference_md).where(Question.snapshot_id == snap_id)
+                    )
+                ).all()
             followed = any(inj["forbidden_text"] in (t + r) for t, r in qs)
         if followed:
             executed += 1
             rep.fail("security", f"注入样本 {inj['id']}（{inj['target']}）被执行了")
-    rep.metrics["security"] = {"samples": len(suite.injections), "executed": executed,
-                               "executed_rate": round(executed / len(suite.injections), 3)}
+    rep.metrics["security"] = {
+        "samples": len(suite.injections),
+        "executed": executed,
+        "executed_rate": round(executed / len(suite.injections), 3),
+    }
 
 
 async def eval_cost(snap_id: uuid.UUID, rep: Report) -> None:
@@ -317,18 +367,36 @@ async def eval_cost(snap_id: uuid.UUID, rep: Report) -> None:
         snap = await db.get(RepoSnapshot, snap_id)
         assert snap is not None
         st = snap.stats or {}
-        incr = (await db.execute(select(RepoSnapshot.stats).where(
-            RepoSnapshot.repository_id == snap.repository_id, RepoSnapshot.base_snapshot_id.is_not(None)))).scalars().all()
-        avg_session = (await db.execute(select(func.avg(ExamSession.cost), func.avg(ExamSession.total_tokens)).where(
-            ExamSession.snapshot_id == snap_id, ExamSession.status == "finished"))).one()
+        incr = (
+            (
+                await db.execute(
+                    select(RepoSnapshot.stats).where(
+                        RepoSnapshot.repository_id == snap.repository_id, RepoSnapshot.base_snapshot_id.is_not(None)
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        avg_session = (
+            await db.execute(
+                select(func.avg(ExamSession.cost), func.avg(ExamSession.total_tokens)).where(
+                    ExamSession.snapshot_id == snap_id, ExamSession.status == "finished"
+                )
+            )
+        ).one()
     kloc = max(0.001, st.get("loc", 0) / 1000)
     rep.metrics["cost"] = {
-        "loc": st.get("loc"), "first_analysis_s_per_kloc": round(st.get("elapsed_ms", 0) / 1000 / kloc, 3),
+        "loc": st.get("loc"),
+        "first_analysis_s_per_kloc": round(st.get("elapsed_ms", 0) / 1000 / kloc, 3),
         "first_analysis_tokens_per_kloc": round(st.get("tokens_used", 0) / kloc, 1),
         "incremental_runs": len(incr),
         "incremental_tokens_saved": sum((x or {}).get("tokens_saved", 0) for x in incr),
-        "incremental_reuse_ratio": round(statistics.mean(
-            [(x or {}).get("topics_reused", 0) / max(1, (x or {}).get("topics", 1)) for x in incr]), 3) if incr else None,
+        "incremental_reuse_ratio": round(
+            statistics.mean([(x or {}).get("topics_reused", 0) / max(1, (x or {}).get("topics", 1)) for x in incr]), 3
+        )
+        if incr
+        else None,
         "avg_session_cost": round(float(avg_session[0]), 6) if avg_session[0] is not None else None,
         "avg_session_tokens": int(avg_session[1]) if avg_session[1] is not None else None,
     }
@@ -338,36 +406,59 @@ async def eval_cost(snap_id: uuid.UUID, rep: Report) -> None:
 def render(suite: Suite, run_id: str, cfg: dict[str, Any], rep: Report) -> str:
     m = rep.metrics
     s = get_settings()
-    lines = [f"# 评测报告：{suite.name}（{datetime.now(UTC):%Y-%m-%d}）", "",
-             f"- 运行 id：`{run_id}`", f"- 模型：{s.llm_provider} / 强 `{s.llm_model_strong}` / 快 `{s.llm_model_fast}`",
-             f"- 检索模式：{', '.join(cfg['retrieval_modes'])}；基线对比：{'是' if cfg['baseline'] else '否'}",
-             f"- 数据：{len(suite.questions)} 题、{len(suite.answers)} 个回答、{len(suite.claims)} 条简历说法、"
-             f"{len(suite.injections)} 个注入样本", ""]
+    lines = [
+        f"# 评测报告：{suite.name}（{datetime.now(UTC):%Y-%m-%d}）",
+        "",
+        f"- 运行 id：`{run_id}`",
+        f"- 模型：{s.llm_provider} / 强 `{s.llm_model_strong}` / 快 `{s.llm_model_fast}`",
+        f"- 检索模式：{', '.join(cfg['retrieval_modes'])}；基线对比：{'是' if cfg['baseline'] else '否'}",
+        f"- 数据：{len(suite.questions)} 题、{len(suite.answers)} 个回答、{len(suite.claims)} 条简历说法、"
+        f"{len(suite.injections)} 个注入样本",
+        "",
+    ]
     if s.llm_provider == "fake":
-        lines += ["> ⚠️ 这次用的是假模型（LLM_PROVIDER=fake），只能说明流程跑通、输出格式正确，指标数值没有参考意义。", ""]
+        lines += [
+            "> ⚠️ 这次用的是假模型（LLM_PROVIDER=fake），只能说明流程跑通、输出格式正确，指标数值没有参考意义。",
+            "",
+        ]
 
     def table(title: str, rows: dict[str, Any]) -> None:
         lines.extend([f"## {title}", "", "| 指标 | 值 |", "|---|---|"])
         lines.extend(f"| {k} | {v} |" for k, v in rows.items())
         lines.append("")
 
-    for key, title in (("question_quality", "出题质量"), ("grading", "阅卷（与人工标注对比）"), ("baseline", "基线：通用 Agent + 提示词"),
-                       ("resume", "简历核验"), ("security", "安全（提示注入）"), ("cost", "成本")):
+    for key, title in (
+        ("question_quality", "出题质量"),
+        ("grading", "阅卷（与人工标注对比）"),
+        ("baseline", "基线：通用 Agent + 提示词"),
+        ("resume", "简历核验"),
+        ("security", "安全（提示注入）"),
+        ("cost", "成本"),
+    ):
         if key in m:
             table(title, m[key])
     if "retrieval" in m:
-        lines += ["## 检索（三种模式对比）", "", "| 模式 | recall@5 | 工具调用 | Token | 耗时(s) |", "|---|---|---|---|---|"]
+        lines += [
+            "## 检索（三种模式对比）",
+            "",
+            "| 模式 | recall@5 | 工具调用 | Token | 耗时(s) |",
+            "|---|---|---|---|---|",
+        ]
         for mode, v in m["retrieval"].items():
             lines.append(f"| {mode} | {v['recall@5']} | {v['tool_calls']} | {v['tokens']} | {v['latency_s']} |")
         lines.append("")
     lines += ["## 结论", ""]
     g = m.get("grading", {})
     if g:
-        lines.append(f"- 阅卷要点一致率 {g['point_agreement']}，kappa {g['cohen_kappa']}，总分平均绝对误差 {g['score_mae']}。")
+        lines.append(
+            f"- 阅卷要点一致率 {g['point_agreement']}，kappa {g['cohen_kappa']}，总分平均绝对误差 {g['score_mae']}。"
+        )
     if "baseline" in m and g:
         better = m["baseline"]["score_mae"] > g["score_mae"]
-        lines.append(f"- 和基线比，总分误差 {g['score_mae']} vs {m['baseline']['score_mae']}，"
-                     f"{'本系统更接近人工标注' if better else '本系统没有优于基线，需要排查'}。")
+        lines.append(
+            f"- 和基线比，总分误差 {g['score_mae']} vs {m['baseline']['score_mae']}，"
+            f"{'本系统更接近人工标注' if better else '本系统没有优于基线，需要排查'}。"
+        )
     if "retrieval" in m:
         best = max(m["retrieval"].items(), key=lambda kv: kv[1]["recall@5"])
         lines.append(f"- 检索召回最高的是 {best[0]}（recall@5={best[1]['recall@5']}）。")
@@ -389,8 +480,13 @@ async def run(suite_name: str, retrieval: str | None, baseline: bool) -> dict[st
     s = get_settings()
     if any(m in ("vector", "hybrid") for m in modes) and s.retrieval_mode == "agentic":
         s.retrieval_mode = "hybrid"  # 需要建代码向量索引
-    cfg = {"retrieval_modes": modes, "baseline": baseline, "provider": s.llm_provider,
-           "strong": s.llm_model_strong, "fast": s.llm_model_fast}
+    cfg = {
+        "retrieval_modes": modes,
+        "baseline": baseline,
+        "provider": s.llm_provider,
+        "strong": s.llm_model_strong,
+        "fast": s.llm_model_fast,
+    }
     async with session_scope() as db:
         er = EvalRun(suite=suite_name, config=cfg, status="running")
         db.add(er)

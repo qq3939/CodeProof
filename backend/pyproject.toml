@@ -55,6 +55,8 @@ python_version = "3.12"
 ignore_missing_imports = true
 warn_unused_ignores = false
 check_untyped_defs = true
+# 只检查核心目录（SPEC 14）；它们导入的其他模块静默跟随，不在这里报错
+follow_imports = "silent"
 files = ["app/core", "app/agents", "app/tools"]
 
 [tool.pytest.ini_options]

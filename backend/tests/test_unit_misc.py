@@ -108,7 +108,11 @@ def test_hint_leak_detection() -> None:
 
 
 def test_kb_split() -> None:
-    md = "# Redis\n\n## 数据结构\n\n" + "ZSet 是有序集合。" * 200 + "\n\n### 跳表\n\n跳表很快。\n\n## 持久化\n\nRDB 和 AOF。\n"
+    md = (
+        "# Redis\n\n## 数据结构\n\n"
+        + "ZSet 是有序集合。" * 200
+        + "\n\n### 跳表\n\n跳表很快。\n\n## 持久化\n\nRDB 和 AOF。\n"
+    )
     chunks = split_markdown(md)
     heads = [h for h, _ in chunks]
     assert heads[0] == "Redis > 数据结构" and "Redis > 数据结构 > 跳表" in heads and heads[-1] == "Redis > 持久化"
