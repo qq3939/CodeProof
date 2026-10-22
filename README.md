@@ -13,6 +13,8 @@ docker compose up -d --build
 
 打开 http://localhost:8090 ，用"开发模式登录"输入任意用户名即可。
 
+部署到服务器（HTTPS、GitHub 登录、关闭开发登录）见 [docs/deploy.md](docs/deploy.md)。
+
 | 服务 | 宿主机端口 | 说明 |
 | --- | --- | --- |
 | frontend（Nginx） | 8090 | 网页；`/api` 转发给 api |
@@ -123,6 +125,7 @@ docs/             SPEC、设计决策、踩坑记录、学习文档、评测报�
 
 ## 文档
 
+- [docs/deploy.md](docs/deploy.md)：部署到云服务器
 - [docs/decisions.md](docs/decisions.md)：设计决策
 - [docs/pitfalls.md](docs/pitfalls.md)：踩坑记录
 - [docs/learn/](docs/learn/)：每个里程碑的学习文档

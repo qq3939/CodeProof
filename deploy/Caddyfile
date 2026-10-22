@@ -1,0 +1,23 @@
+# Caddy 会自动向 Let's Encrypt 申请并续期 HTTPS 证书，前提是：
+#   1. 域名的 A 记录指向这台服务器（Cloudflare 上要用"仅 DNS"灰云，否则证书校验走不到这里）；
+#   2. 服务器的 80 和 443 端口在防火墙里放行。
+{$DOMAIN} {
+	# 前端 Nginx 已经负责静态文件和 /api 转发，这里只做 HTTPS 终结
+	reverse_proxy frontend:80 {
+		# SSE（面试官的流式输出）需要立即转发，不能攒缓冲
+		flush_interval -1
+	}
+
+	header {
+		# 告诉浏览器以后只用 https 访问这个域名
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

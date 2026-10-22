@@ -136,3 +136,12 @@
 - **为什么选它**：启动时没有请求事务；`setup()` 本身幂等，多进程同时执行也安全。
 - **代价与风险**：启动多一次数据库往返。
 - **相关代码**：`backend/app/sessions/graph.py:470`、`backend/app/main.py:27`
+
+## D-015 生产部署：Compose 覆盖文件 + Caddy 自动 HTTPS
+
+- **背景**：要部署到一台 2 核 2 GB 的香港服务器，用 `https://exam.fufu235.top` 访问；开发配置（开发登录、数据库端口对外、默认密钥）不能带上线。
+- **方案**：`docker-compose.prod.yml` 叠加在原配置上：关掉除 80/443 外的所有宿主机端口，强制 `ENV=prod` 和关闭开发登录，限制 Postgres/Redis/worker 的内存；新增 Caddy 容器做 HTTPS 终结，转发给原来的前端 Nginx。服务器 `.env` 里写 `COMPOSE_FILE`，平时只需 `docker compose up -d`。后端在 `ENV=prod` 且 JWT 密钥是默认值或过短时拒绝启动。
+- **备选**：宿主机装 Nginx + certbot（多一套要维护的系统服务，证书续期要配定时任务）；单独写一份完整的生产 compose（和开发配置会慢慢不一致）。
+- **为什么选它**：Caddy 证书申请、续期、http 跳转全自动，配置只有几行；覆盖文件只写差异，开发配置的改动自动带到生产。
+- **代价与风险**：多一层代理；`ports: !reset []` 需要 Docker Compose 2.24+；Cloudflare 必须保持灰云，否则证书校验失败。
+- **相关代码**：`docker-compose.prod.yml`、`deploy/`、`backend/app/core/config.py`（`_check_prod`），步骤见 `docs/deploy.md`

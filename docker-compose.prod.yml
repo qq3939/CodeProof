@@ -1,0 +1,57 @@
+# 生产环境覆盖文件：和 docker-compose.yml 叠加使用。
+# 服务器上的 .env 里写了 COMPOSE_FILE=docker-compose.yml:docker-compose.prod.yml，
+# 所以直接 `docker compose up -d` 就会自动叠加，不用每次手敲两个 -f。
+# 部署步骤见 docs/deploy.md。需要 Docker Compose 2.24+（!reset 语法）。
+
+x-prod-env: &prod-env
+  # 写在这里而不是只写在 .env：就算 .env 填错，生产环境也一定是 prod、一定关掉开发登录
+  ENV: prod
+  ENABLE_DEV_LOGIN: "false"
+
+services:
+  postgres:
+    # 数据库和 Redis 只在容器网络内部访问，不在宿主机上开端口，公网扫不到
+    ports: !reset []
+    # 2 GB 内存的机器：限制 Postgres 的共享缓冲区，给 worker 留出空间
+    command: ["postgres", "-c", "shared_buffers=128MB", "-c", "max_connections=60"]
+
+  redis:
+    ports: !reset []
+    # 限制 Redis 内存，满了按 LRU 淘汰缓存键（任务队列数据量很小，不会碰到上限）
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "128mb", "--maxmemory-policy", "volatile-lru"]
+
+  migrate:
+    environment: *prod-env
+
+  api:
+    # api 只让 frontend 的 Nginx 访问，不再对外暴露 8000
+    ports: !reset []
+    environment: *prod-env
+
+  worker:
+    environment: *prod-env
+    # 分析大仓库时 worker 最吃内存；给个上限，超了只杀 worker（会自动重启），不拖垮整台机器
+    mem_limit: 1g
+
+  frontend:
+    # 前端不再直接对外，由 Caddy 转发
+    ports: !reset []
+
+  caddy:
+    image: caddy:2.8-alpine
+    # 80 用于申请证书和把 http 跳转到 https；443 是正式访问端口
+    ports: ["80:80", "443:443"]
+    environment:
+      DOMAIN: ${DOMAIN:?请在 .env 里设置 DOMAIN}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # 证书存在卷里：重建容器不用重新申请，避免触发 Let's Encrypt 的频率限制
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      frontend: { condition: service_healthy }
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

@@ -30,3 +30,4 @@ eval/.cache/
 
 # 测试夹具里故意放的"敏感文件"，用来测沙箱拒绝读取
 !backend/tests/fixtures/**/.env
+/dist-deploy/
