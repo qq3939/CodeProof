@@ -11,8 +11,11 @@ import json
 from functools import lru_cache
 from typing import Annotated, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+
+# 代码默认值和 .env.example 里的占位值，生产环境不允许沿用
+_DEFAULT_JWT_SECRETS = ("change-me-in-env", "please-change-me-to-a-long-random-string")
 
 
 class Settings(BaseSettings):
@@ -114,6 +117,14 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return [int(x) for x in v.replace("[", "").replace("]", "").split(",") if x.strip()]
         return v
+
+    @model_validator(mode="after")
+    def _check_prod(self) -> Settings:
+        # 生产环境用默认或过短的 JWT 密钥等于谁都能伪造登录态：宁可启动失败，也不带着它上线
+        weak = self.jwt_secret in _DEFAULT_JWT_SECRETS or len(self.jwt_secret) < 32
+        if self.is_prod and weak:
+            raise ValueError("ENV=prod 时必须把 JWT_SECRET 设为至少 32 位的随机字符串")
+        return self
 
     @property
     def sync_database_url(self) -> str:
