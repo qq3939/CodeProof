@@ -3,7 +3,7 @@
 
 x-backend: &backend
   build: ./backend
-  image: project-b-backend:latest
+  image: codeproof-backend:latest
   env_file: .env
   environment:
     # 容器内部互相访问用服务名和容器端口，覆盖 .env 里给本机开发用的 localhost 地址
@@ -85,7 +85,7 @@ services:
 
   frontend:
     build: ./frontend
-    image: project-b-frontend:latest
+    image: codeproof-frontend:latest
     ports: ["8090:80"]
     depends_on:
       api: { condition: service_healthy }

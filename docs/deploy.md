@@ -1,6 +1,6 @@
 # 部署到云服务器（exam.fufu235.top）
 
-这份指南带你把 project-b 部署到腾讯云香港轻量服务器（124.156.172.59，2 核 2 GB，Ubuntu 22.04），用 `https://exam.fufu235.top` 访问。
+这份指南带你把 CodeProof 部署到腾讯云香港轻量服务器（124.156.172.59，2 核 2 GB，Ubuntu 22.04），用 `https://exam.fufu235.top` 访问。
 命令都在两个地方运行，每一步都标明了：
 
 - **【Windows】**：你电脑上的 PowerShell（开始菜单搜 "PowerShell"）。
@@ -166,7 +166,7 @@ bash deploy/setup-swap.sh
 
 | 字段 | 填写 |
 | --- | --- |
-| Application name | project-b（随意） |
+| Application name | CodeProof（随意） |
 | Homepage URL | `https://exam.fufu235.top` |
 | Authorization callback URL | `https://exam.fufu235.top/api/auth/github/callback` |
 

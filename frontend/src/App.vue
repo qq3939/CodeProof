@@ -27,7 +27,7 @@ const active = computed(() => {
   <router-view v-if="bare" />
   <el-container v-else class="layout">
     <el-header class="header">
-      <div class="brand" @click="$router.push('/')">project-b</div>
+      <div class="brand" @click="$router.push('/')">CodeProof</div>
       <el-menu mode="horizontal" :default-active="active" router :ellipsis="false" class="nav">
         <el-menu-item index="/">仓库</el-menu-item>
         <el-menu-item index="/sessions/new">开始考核</el-menu-item>

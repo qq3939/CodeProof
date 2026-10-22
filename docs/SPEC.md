@@ -1,6 +1,6 @@
-# 项目 B 执行文档（SPEC）
+# CodeProof 执行文档（SPEC）
 
-> 项目名暂用占位名 `project-b`。正式名称在 M0 开工时向用户确认，下文用 `xxx` 指代。
+> 项目正式名称：CodeProof（中文名「码证」），代码、命令和包名里用小写 `codeproof`。
 > 本文的读者是在这个文件夹里开工的 Claude Code 会话，下称"执行者"。
 
 ## 0. 执行者须知
@@ -29,7 +29,7 @@
 
 ## 1. 开工前向用户确认
 
-- **项目正式名称**：英文小写加连字符，用于仓库名和 Python 包名。
+- **项目正式名称**：英文小写加连字符，用于仓库名和 Python 包名。（已定：CodeProof / `codeproof`）
 - **GitHub OAuth App**（M0 需要）：教用户在 GitHub 的 Settings → Developer settings → OAuth Apps 新建一个。
   - Homepage URL 填 `http://localhost:8090`；
   - Callback URL 填 `http://localhost:8090/api/auth/github/callback`；
@@ -144,7 +144,7 @@ MCP Server（独立进程，stdio）──> 用个人 API 令牌调用 api
 ### 5.2 工程结构
 
 ```
-project-b/
+codeproof/
 ├── backend/
 │   ├── pyproject.toml、uv.lock、Dockerfile
 │   ├── alembic/

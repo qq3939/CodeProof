@@ -39,7 +39,7 @@ async function devLogin() {
 <template>
   <div class="login">
     <el-card class="box">
-      <h2>project-b</h2>
+      <h2>CodeProof</h2>
       <p class="muted">AI 当考官，以代码为证据，考你对一个 Java / Spring Boot 仓库的理解。</p>
       <el-alert v-if="error" :title="`登录失败：${error}`" type="error" show-icon :closable="false" />
       <el-button v-if="cfg.github" type="primary" size="large" class="full" @click="github">使用 GitHub 登录</el-button>

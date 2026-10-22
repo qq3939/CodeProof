@@ -1,4 +1,4 @@
-# project-b（正式名称待定）
+# CodeProof（码证）
 
 代码理解考核 Agent：提交一个 Java / Spring Boot 仓库，AI 当考官，**以代码为证据**考你对这个仓库的理解——会追问、会给分级提示、会查代码核对你的说法，结束后给出逐要点的评分报告和复习计划。
 
@@ -71,13 +71,13 @@ cd ../frontend && npm run build        # vue-tsc 类型检查 + 构建
 2. 注册 MCP Server：
 
 ```bash
-claude mcp add project-b \
+claude mcp add codeproof \
   -e PB_API_URL=http://localhost:8090/api \
   -e PB_API_TOKEN=pbt_你的令牌 \
-  -- uv run --directory /path/to/project-b/backend python -m app.mcp_server
+  -- uv run --directory /path/to/codeproof/backend python -m app.mcp_server
 ```
 
-3. 在 Claude Code 里说："用 project-b 分析 https://github.com/spring-projects/spring-petclinic ，然后考我 3 道题"。
+3. 在 Claude Code 里说："用 CodeProof 分析 https://github.com/spring-projects/spring-petclinic ，然后考我 3 道题"。
 
 可用工具：`list_repos`、`analyze_repo`、`start_session`、`answer`、`hint`、`get_report`。
 
@@ -116,7 +116,6 @@ docs/             SPEC、设计决策、踩坑记录、学习文档、评测报�
 
 ## 还需要你提供或确认的
 
-- 项目正式名称（现在叫 project-b）。
 - GitHub OAuth App 的 Client ID / Secret（M0 完成标准"用 GitHub 账号登录"）。
 - 管理员的 GitHub 登录名（`ADMIN_GITHUB_LOGINS`）。
 - 模型服务的地址、Key 和模型名（M6 真实评测报告）。

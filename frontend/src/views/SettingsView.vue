@@ -37,7 +37,7 @@ async function copy(s: string) {
 const apiUrl = computed(() => `${location.origin}/api`)
 const mcpCmd = computed(
   () =>
-    `claude mcp add project-b \\\n  -e PB_API_URL=${apiUrl.value} \\\n  -e PB_API_TOKEN=${created.value || 'pbt_你的令牌'} \\\n  -- uv run --directory /path/to/project-b/backend python -m app.mcp_server`,
+    `claude mcp add codeproof \\\n  -e PB_API_URL=${apiUrl.value} \\\n  -e PB_API_TOKEN=${created.value || 'pbt_你的令牌'} \\\n  -- uv run --directory /path/to/codeproof/backend python -m app.mcp_server`,
 )
 </script>
 
@@ -74,11 +74,11 @@ const mcpCmd = computed(
     </el-card>
 
     <el-card header="在 Claude Code 里使用（MCP）">
-      <p>在本机克隆项目后，执行下面的命令把 project-b 注册为 MCP Server：</p>
+      <p>在本机克隆项目后，执行下面的命令把 CodeProof 注册为 MCP Server：</p>
       <pre class="mono cmd">{{ mcpCmd }}</pre>
       <el-button size="small" @click="copy(mcpCmd)">复制命令</el-button>
       <p class="muted">
-        之后在 Claude Code 里可以直接说"用 project-b 分析 https://github.com/xxx/yyy 然后考我 3 道题"。
+        之后在 Claude Code 里可以直接说"用 CodeProof 分析 https://github.com/xxx/yyy 然后考我 3 道题"。
         可用工具：list_repos、analyze_repo、start_session、answer、hint、get_report。
       </p>
     </el-card>

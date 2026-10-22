@@ -36,7 +36,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 def create_app() -> FastAPI:
     s = get_settings()
     app = FastAPI(
-        title="project-b", version="0.1.0", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json"
+        title="CodeProof", version="0.1.0", lifespan=lifespan, docs_url="/api/docs", openapi_url="/api/openapi.json"
     )
     install_error_handlers(app)
 

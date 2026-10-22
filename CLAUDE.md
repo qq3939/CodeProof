@@ -1,11 +1,10 @@
-# project-b（正式名称待定）
+# CodeProof（码证）
 
 代码理解考核 Agent：AI 当考官，以代码为证据检验一个人对代码的理解。技术栈：Python 3.12 + FastAPI + LangGraph + Vue 3。完整规格见 `docs/SPEC.md`。
 
 ## 开工须知
 
 - **第一次进入本项目**：先通读 `docs/SPEC.md`，再向用户确认 SPEC 第 1 节列出的信息：
-  - 项目正式名称；
   - GitHub OAuth App；
   - 管理员登录名；
   - 模型服务。

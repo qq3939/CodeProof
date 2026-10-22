@@ -22,7 +22,7 @@ API_URL = os.environ.get("PB_API_URL", "http://localhost:8090/api").rstrip("/")
 API_TOKEN = os.environ.get("PB_API_TOKEN", "")
 
 mcp = MCPServer(
-    "project-b",
+    "codeproof",
     instructions="代码理解考核：AI 当考官，以代码为证据考你对一个仓库的理解。先 analyze_repo，再 start_session，"
     "然后用 answer 作答、hint 要提示，结束后 get_report 看报告。",
 )

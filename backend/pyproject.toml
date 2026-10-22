@@ -1,5 +1,5 @@
 [project]
-name = "project-b"
+name = "codeproof"
 version = "0.1.0"
 description = "代码理解考核 Agent：AI 当考官，以代码为证据检验一个人对代码的理解"
 requires-python = ">=3.12,<3.13"
