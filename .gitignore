@@ -1,0 +1,29 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+frontend/dist/
+
+# 密钥：只提交 .env.example
+.env
+.env.*
+!.env.example
+
+# 仓库存储目录与评测临时产物
+data/
+repos/
+eval/runs/
+eval/.cache/
+
+# 编辑器
+.idea/
+.vscode/
+.DS_Store

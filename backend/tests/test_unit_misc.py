@@ -1,0 +1,117 @@
+"""单元测试：沙箱、证据校验、RRF、掌握度排期、提示防泄露、知识库切块、模型重试与降级。"""
+
+from __future__ import annotations
+
+import os
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import pytest
+
+from app.agents.interviewer import leaks
+from app.analysis import evidence
+from app.kb.service import split_markdown
+from app.mastery.service import apply_score, ema, next_interval, pick
+from app.retrieval.rrf import rrf
+from app.tools.sandbox import Sandbox
+
+FIX = Path(__file__).parent / "fixtures" / "mini-feed"
+
+
+@pytest.fixture()
+def sandbox(tmp_path: Path) -> Sandbox:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "A.java").write_text("\n".join(f"line {i} foo()" for i in range(1, 501)))
+    (root / ".env").write_text("SECRET=abc")
+    (root / "key.pem").write_text("-----BEGIN")
+    (tmp_path / "outside.txt").write_text("outside secret")
+    os.symlink(tmp_path / "outside.txt", root / "link.txt")
+    (root / "sub").mkdir()
+    return Sandbox(root)
+
+
+async def test_sandbox_path_traversal(sandbox: Sandbox) -> None:
+    assert "拒绝" in await sandbox.call("read_file", {"path": "../outside.txt"})
+    assert "拒绝" in await sandbox.call("read_file", {"path": "/etc/passwd"})
+    assert "拒绝" in await sandbox.call("read_file", {"path": "link.txt"})  # 符号链接指向根目录外
+    assert "拒绝" in await sandbox.call("list_dir", {"path": "sub/../.."})
+
+
+async def test_sandbox_sensitive_files(sandbox: Sandbox) -> None:
+    assert "拒绝" in await sandbox.call("read_file", {"path": ".env"})
+    assert "拒绝" in await sandbox.call("read_file", {"path": "key.pem"})
+    listing = await sandbox.call("list_dir", {"path": "."})
+    assert ".env" not in listing and "key.pem" not in listing
+    out = await sandbox.call("grep", {"pattern": "SECRET|BEGIN"})
+    assert "abc" not in out and "BEGIN" not in out
+
+
+async def test_sandbox_limits(sandbox: Sandbox) -> None:
+    out = await sandbox.read_file("A.java", 1, 1000)
+    assert "300: line 300" in out and "301: line 301" not in out
+    g = await sandbox.grep("foo")
+    assert "只显示前 100 条" in g
+    assert len(g.splitlines()) == 101
+
+
+def test_evidence_check() -> None:
+    sb = Sandbox(FIX)
+    path = "src/main/java/com/example/feed/service/impl/FeedServiceImpl.java"
+    assert evidence.check(sb, [{"path": path, "start_line": 68, "end_line": 71}], ["saveLikeCount"]) is None
+    assert "不存在" in (evidence.check(sb, [{"path": path, "start_line": 68, "end_line": 120}], ["x"]) or "")
+    assert "没有出现" in (evidence.check(sb, [{"path": path, "start_line": 1, "end_line": 3}], ["saveLikeCount"]) or "")
+    assert "不存在" in (evidence.check(sb, [{"path": "nope.java", "start_line": 1, "end_line": 1}], []) or "")
+
+
+def test_rrf() -> None:
+    fused = rrf([["a", "b", "c"], ["b", "c", "d"]], k=60)
+    assert [k for k, _ in fused][:2] == ["b", "c"]
+    assert fused[0][1] == pytest.approx(1 / 62 + 1 / 61)
+
+
+def test_mastery_schedule() -> None:
+    assert ema(None, 40) == 40 and ema(40, 80) == 60
+    assert next_interval(50, 0) == timedelta(days=1)
+    assert next_interval(70, 0) == timedelta(days=3)
+    assert next_interval(90, 1) == timedelta(days=7)
+    assert next_interval(90, 2) == timedelta(days=21)
+    now = datetime.now(UTC)
+    v1 = apply_score(None, 90, now, "s1")
+    assert v1["high_streak"] == 1 and v1["next_review_at"] == now + timedelta(days=7)
+
+    class M:
+        score_ema, attempts, high_streak, history, title = v1["score_ema"], 1, 1, v1["history"], None
+
+    v2 = apply_score(M(), 95, now, "s2")  # type: ignore[arg-type]
+    assert v2["high_streak"] == 2 and v2["next_review_at"] == now + timedelta(days=21)
+
+
+def test_pick_prefers_weak_and_due() -> None:
+    now = datetime.now(UTC)
+
+    class M:
+        def __init__(self, score: float, due: bool) -> None:
+            self.score_ema, self.attempts = score, 1
+            self.next_review_at = now - timedelta(hours=1) if due else now + timedelta(days=5)
+
+    items = [{"topic_key": k, "kind": "mechanism", "importance": 3} for k in ("good", "weak", "new", "due")]
+    ms = {"good": M(95, False), "weak": M(30, False), "due": M(70, True)}
+    chosen = [c["topic_key"] for c in pick(items, 3, ms, "medium", now)]  # type: ignore[arg-type]
+    assert set(chosen[:2]) == {"weak", "due"} and "good" not in chosen
+
+
+def test_hint_leak_detection() -> None:
+    kps = [{"point": "点赞计数先写入 Redis 的 ZSet，再由定时任务 CountFlushJob 批量刷回数据库", "evidence": []}]
+    assert leaks("答案是：点赞计数先写入 Redis 的 ZSet，再由定时任务 CountFlushJob 批量刷回数据库", kps)
+    assert not leaks("想想计数最后是怎么写回数据库的？", kps)
+
+
+def test_kb_split() -> None:
+    md = "# Redis\n\n## 数据结构\n\n" + "ZSet 是有序集合。" * 200 + "\n\n### 跳表\n\n跳表很快。\n\n## 持久化\n\nRDB 和 AOF。\n"
+    chunks = split_markdown(md)
+    heads = [h for h, _ in chunks]
+    assert heads[0] == "Redis > 数据结构" and "Redis > 数据结构 > 跳表" in heads and heads[-1] == "Redis > 持久化"
+    big = [c for h, c in chunks if h == "Redis > 数据结构"]
+    assert len(big) >= 2 and all(len(c) <= 800 for c in big)
+    assert big[0][-100:] == big[1][:100]  # 相邻块重叠 100 字
