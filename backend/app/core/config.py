@@ -16,7 +16,8 @@ from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    # 在 backend/ 下运行时，项目根目录和当前目录的 .env 都会读取（后者优先）
+    model_config = SettingsConfigDict(env_file=("../.env", ".env"), env_file_encoding="utf-8", extra="ignore")
 
     # ---- 运行环境 ----
     env: Literal["dev", "test", "prod"] = "dev"

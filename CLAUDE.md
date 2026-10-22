@@ -34,4 +34,16 @@
 
 ## 常用命令
 
-项目搭起来后在这里补充：启动、迁移、测试、评测、前端开发。
+```bash
+docker compose up -d --build                     # 全部启动，打开 http://localhost:8090
+docker compose up -d postgres redis              # 只启动依赖，本机跑 api/worker/前端
+cd backend && uv sync                            # 安装后端依赖
+uv run alembic upgrade head                      # 迁移
+uv run uvicorn app.main:app --reload --port 8000 # api
+uv run arq app.worker.WorkerSettings             # worker
+uv run pytest -q                                 # 测试（testcontainers；或设 TEST_DATABASE_URL / TEST_REDIS_URL）
+uv run ruff check . && uv run mypy               # 检查
+uv run python -m app.eval run --suite small      # 评测
+cd frontend && npm run dev                       # 前端开发（5173，代理 /api 到 8000）
+npm run build                                    # 前端类型检查 + 构建
+```
