@@ -1,0 +1,23 @@
+{"id": "q1-complete", "question_id": "q1", "quality": "complete", "text": "点赞时调用 incrementScore 写 Redis 的 ZSet，CountFlushJob 用 @Scheduled 每分钟把计数批量刷回库，刷库走 saveLikeCount 再调 updateLikeCount。"}
+{"id": "q1-partial", "question_id": "q1", "quality": "partial", "text": "计数先写到 Redis 的 ZSet 里，用 incrementScore 加一，后面有个定时任务会处理。"}
+{"id": "q1-wrong", "question_id": "q1", "quality": "wrong", "text": "每次点赞直接 update 数据库的 like_count 字段。"}
+{"id": "q1-contradict", "question_id": "q1", "quality": "contradict", "text": "点赞没有用 ZSet，是直接写 MySQL 的，也没有定时任务。"}
+{"id": "q1-unknown", "question_id": "q1", "quality": "unknown", "text": "不知道"}
+{"id": "q2-complete", "question_id": "q2", "quality": "complete", "text": "propagation 是 REQUIRES_NEW，会挂起外层事务新开一个；rollbackFor = Exception.class 所以受检异常也回滚。"}
+{"id": "q2-partial", "question_id": "q2", "quality": "partial", "text": "用了 REQUIRES_NEW 传播行为，会新开事务。"}
+{"id": "q2-wrong", "question_id": "q2", "quality": "wrong", "text": "默认的 REQUIRED 传播，只有 RuntimeException 才回滚。"}
+{"id": "q2-unknown", "question_id": "q2", "quality": "unknown", "text": "不清楚"}
+{"id": "q3-complete", "question_id": "q3", "quality": "complete", "text": "不能生效。onLike 直接在本类里调用 notifyAuthor，是自调用，不经过 Spring 的代理，所以 @Async 失效，还是在监听线程里同步跑。"}
+{"id": "q3-partial", "question_id": "q3", "quality": "partial", "text": "可能不生效，因为是 onLike 里调用 notifyAuthor。"}
+{"id": "q3-wrong", "question_id": "q3", "quality": "wrong", "text": "能生效，会提交到 feedExecutor 线程池异步执行。"}
+{"id": "q3-unknown", "question_id": "q3", "quality": "unknown", "text": "不会"}
+{"id": "q4-complete", "question_id": "q4", "quality": "complete", "text": "用 redissonClient.getLock 拿 RLock，key 带 feedId；tryLock(1,5) 等 1 秒持有 5 秒，拿不到抛异常；finally 里 isHeldByCurrentThread 判断后再 unlock。"}
+{"id": "q4-partial", "question_id": "q4", "quality": "partial", "text": "用了 Redisson 的 RLock 分布式锁，getLock 拿锁。"}
+{"id": "q4-contradict", "question_id": "q4", "quality": "contradict", "text": "没有用锁，是靠 synchronized 保证的。"}
+{"id": "q4-unknown", "question_id": "q4", "quality": "unknown", "text": "忘了"}
+{"id": "q5-complete", "question_id": "q5", "quality": "complete", "text": "FeedController.like 调 FeedService 接口，实现是 FeedServiceImpl.like：先加锁，incrementScore 写 ZSet，再用 RabbitTemplate 的 convertAndSend 发消息。"}
+{"id": "q5-partial", "question_id": "q5", "quality": "partial", "text": "Controller 调 FeedServiceImpl，然后写 Redis。"}
+{"id": "q5-wrong", "question_id": "q5", "quality": "wrong", "text": "Controller 直接调用 Mapper 写库。"}
+{"id": "q6-complete", "question_id": "q6", "quality": "complete", "text": "setCorePoolSize 4、setMaxPoolSize 8、setQueueCapacity 1000；没配拒绝策略，默认 AbortPolicy，满了会抛 RejectedExecutionException。"}
+{"id": "q6-partial", "question_id": "q6", "quality": "partial", "text": "核心 4 最大 8，队列 1000。"}
+{"id": "q6-unknown", "question_id": "q6", "quality": "unknown", "text": "不知道"}

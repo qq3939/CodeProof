@@ -31,8 +31,9 @@ _transport: httpx.AsyncBaseTransport | None = None  # 测试时注入 ASGITransp
 
 
 def _client() -> httpx.AsyncClient:
-    return httpx.AsyncClient(base_url=API_URL, headers={"Authorization": f"Bearer {API_TOKEN}"}, timeout=120,
-                             transport=_transport)
+    return httpx.AsyncClient(
+        base_url=API_URL, headers={"Authorization": f"Bearer {API_TOKEN}"}, timeout=120, transport=_transport
+    )
 
 
 async def _get(path: str, **params: Any) -> Any:
@@ -86,8 +87,15 @@ async def _stream(path: str, body: dict[str, Any] | None = None) -> dict[str, An
 async def list_repos() -> list[dict[str, Any]]:
     """列出我提交过的仓库和最新快照状态。"""
     repos = await _get("/repos")
-    return [{"repository_id": r["id"], "url": r["url"], "snapshot_id": (r.get("latest_snapshot") or {}).get("id"),
-             "status": (r.get("latest_snapshot") or {}).get("status")} for r in repos]
+    return [
+        {
+            "repository_id": r["id"],
+            "url": r["url"],
+            "snapshot_id": (r.get("latest_snapshot") or {}).get("id"),
+            "status": (r.get("latest_snapshot") or {}).get("status"),
+        }
+        for r in repos
+    ]
 
 
 @mcp.tool()
@@ -108,7 +116,9 @@ async def analyze_repo(url: str, ref: str | None = None, wait_seconds: int = 600
 
 
 @mcp.tool()
-async def start_session(snapshot: str, mode: str = "deep_dive", n: int = 5, endpoint: str | None = None) -> dict[str, Any]:
+async def start_session(
+    snapshot: str, mode: str = "deep_dive", n: int = 5, endpoint: str | None = None
+) -> dict[str, Any]:
     """开始一场考核。mode：deep_dive 项目深挖 / kb_link 八股联系项目 / chain 链路学习（需 endpoint）/ resume / change。"""
     cfg = {"endpoint": endpoint} if endpoint else {}
     res = await _post("/sessions", {"snapshot_id": snapshot, "mode": mode, "question_count": n, "config": cfg})

@@ -1,0 +1,6 @@
+{"id": "c1", "text": "使用 Redis ZSet 存储点赞计数，并通过定时任务 CountFlushJob 批量落库", "type": "tech", "entities": ["ZSet", "CountFlushJob"], "is_false": false}
+{"id": "c2", "text": "使用 Redisson 分布式锁 RLock 保证点赞并发安全", "type": "tech", "entities": ["Redisson", "RLock"], "is_false": false}
+{"id": "c3", "text": "使用 RabbitMQ 异步通知作者", "type": "tech", "entities": ["RabbitTemplate", "RabbitListener"], "is_false": false}
+{"id": "c4", "text": "使用 Kafka 做消息削峰", "type": "tech", "entities": ["Kafka"], "is_false": true}
+{"id": "c5", "text": "使用 Elasticsearch 实现全文检索", "type": "tech", "entities": ["Elasticsearch"], "is_false": true}
+{"id": "c6", "text": "使用 Caffeine 本地缓存热点数据", "type": "tech", "entities": ["Caffeine"], "is_false": true}

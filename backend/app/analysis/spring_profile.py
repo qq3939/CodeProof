@@ -102,6 +102,14 @@ TECH_MAP = [
 ]
 
 
+TEST_PATH = re.compile(r"(^|/)(src/test|test|tests)/|Tests?\.java$")
+
+
+def is_test_path(path: str) -> bool:
+    """测试代码照样建索引（工具能查到），但不进画像和考点：面试不会考测试方法里的 @Transactional。"""
+    return bool(TEST_PATH.search(path))
+
+
 @dataclass
 class TextFile:
     path: str
@@ -251,7 +259,7 @@ def _loc(s: SymRef, line: int | None = None) -> dict[str, Any]:
 def extract_components(model: CodeModel) -> list[dict[str, Any]]:
     out = []
     for t in model.symbols:
-        if t.sym.kind not in ("class", "interface"):
+        if t.sym.kind not in ("class", "interface") or is_test_path(t.path):
             continue
         for a in t.sym.annotations:
             if a.name in COMPONENT_ANN:
@@ -263,7 +271,7 @@ def extract_components(model: CodeModel) -> list[dict[str, Any]]:
 def extract_usages(model: CodeModel, sources: dict[str, str]) -> dict[str, list[dict[str, Any]]]:
     u: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for s in model.symbols:
-        if s.sym.kind not in ("method", "class"):
+        if s.sym.kind not in ("method", "class") or is_test_path(s.path):
             continue
         for a in s.sym.annotations:
             if a.name == "Transactional":
@@ -289,6 +297,8 @@ def extract_usages(model: CodeModel, sources: dict[str, str]) -> dict[str, list[
             u["concurrency"].append({**_loc(s), "kind": "synchronized_method"})
     seen: set[tuple[str, str, str]] = set()
     for rc in model.calls:
+        if is_test_path(rc.caller.path):
+            continue
         root = rc.call.root_type or ""
         kind = None
         if root in REDIS_TYPES or rc.call.name.startswith("opsFor"):
@@ -321,6 +331,8 @@ def extract_usages(model: CodeModel, sources: dict[str, str]) -> dict[str, list[
                     }
                 )
     for f in model.files:
+        if is_test_path(f.path):
+            continue
         for midx, line in f.index.sync_blocks:
             m = model.by_id[f.symbol_ids[midx]]
             u["concurrency"].append({**_loc(m, line), "kind": "synchronized_block"})

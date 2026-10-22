@@ -383,3 +383,12 @@ def embed(text: str) -> list[float]:
         vec[0] = 1.0  # 全零向量的余弦距离是 NaN，给个默认方向
     norm = math.sqrt(sum(v * v for v in vec)) or 1.0
     return [v / norm for v in vec]
+
+
+@task("baseline.judge")
+def _baseline(p: dict[str, Any]) -> dict[str, Any]:
+    """基线的假实现：只看回答和检索到的代码有多少词重叠，不知道答案要点。"""
+    from app.core.text import containment
+
+    score = int(round(100 * containment(p.get("answer", ""), p.get("code", ""))))
+    return {"points": [], "contradictions": [], "score": max(0, min(100, score)), "feedback": "基线判分", "review_topics": []}

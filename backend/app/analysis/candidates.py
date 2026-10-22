@@ -12,6 +12,7 @@ import re
 from typing import Any
 
 from app.analysis.code_model import CodeModel, SymRef
+from app.analysis.spring_profile import is_test_path
 
 MAX_EVIDENCE_LINES = 40
 
@@ -33,7 +34,7 @@ def _self_invocations(model: CodeModel, annotation: str) -> list[tuple[SymRef, S
     """找"同类内部直接调用带 @Transactional/@Async/@Cacheable 的方法"——Spring AOP 代理不生效的经典坑。"""
     out = []
     for rc in model.calls:
-        if rc.call.receiver not in (None, "this"):
+        if rc.call.receiver not in (None, "this") or is_test_path(rc.caller.path):
             continue
         for t in rc.targets:
             if t.has_ann(annotation) and t.owner is rc.caller.owner and t.id != rc.caller.id:
@@ -45,22 +46,25 @@ def build_candidates(model: CodeModel, profile: dict[str, Any], limit: int = 40)
     c: list[dict[str, Any]] = []
     usages = profile.get("usages", {})
 
-    # ---- 链路：每个接口一条（只取有业务层站点的）
+    # ---- 链路：每个接口一条，优先"层次多、碰到中间件"的接口
     for ch in profile.get("chains", []):
         steps = ch["steps"]
         if len(steps) < 2:
             continue
-        evs = [_ev(s["file"], s["start_line"], s["end_line"]) for s in steps[:4] if s.get("file")]
-        idents = [s["symbol"].split(".")[-1] for s in steps[:3]]
+        layers = {st["layer"] for st in steps}
+        richness = len(layers) + (2 if "middleware" in layers else 0) + min(len(steps), 8) / 4
+        evs = [_ev(st["file"], st["start_line"], st["end_line"]) for st in steps[:4] if st.get("file")]
+        idents = [st["symbol"].split(".")[-1] for st in steps[:3]]
         c.append(
             {
                 "kind": "chain",
                 "title": f"接口 {ch['endpoint']} 的调用链路",
-                "description": "从 " + " → ".join(s["symbol"] for s in steps[:5]) + " 的处理过程",
+                "description": "从 " + " → ".join(st["symbol"] for st in steps[:5]) + " 的处理过程",
                 "evidence": evs,
-                "importance": 4 if len(steps) >= 3 else 3,
+                "importance": 5 if richness >= 6 else (4 if richness >= 4 else 3),
                 "topic_key": f"chain:{ch['endpoint']}",
                 "identifiers": idents,
+                "_score": richness,
             }
         )
 
@@ -78,7 +82,7 @@ def build_candidates(model: CodeModel, profile: dict[str, Any], limit: int = 40)
         by_symbol: dict[str, list[dict[str, Any]]] = {}
         for u in usages.get(key, []):
             by_symbol.setdefault(u["symbol"], []).append(u)
-        for sym, items in list(by_symbol.items())[:6]:
+        for rank, (sym, items) in enumerate(list(by_symbol.items())[:4]):
             first = items[0]
             detail = ""
             if key == "transaction":
@@ -96,6 +100,8 @@ def build_candidates(model: CodeModel, profile: dict[str, Any], limit: int = 40)
                     "evidence": [_ev(first["file"], first["start_line"], first["end_line"])],
                     "importance": 4 if key in ("transaction", "redis", "mq", "concurrency") else 3,
                     "topic_key": f"{prefix}:{sym}",
+                    # 轮转：每类机制的第一个先入选，避免某一类（如 Redis 有上百处）占满名额
+                    "_score": 10 - rank,
                     "identifiers": [ident],
                 }
             )
@@ -129,7 +135,12 @@ def build_candidates(model: CodeModel, profile: dict[str, Any], limit: int = 40)
                 }
             )
     for s in model.symbols:
-        if s.sym.kind == "method" and s.has_ann("Transactional") and not re.search(r"\bpublic\b", s.sym.signature):
+        if (
+            s.sym.kind == "method"
+            and s.has_ann("Transactional")
+            and not re.search(r"\bpublic\b", s.sym.signature)
+            and not is_test_path(s.path)
+        ):
             c.append(
                 {
                     "kind": "risk",
@@ -181,13 +192,17 @@ def build_candidates(model: CodeModel, profile: dict[str, Any], limit: int = 40)
             }
         )
 
-    # 去重 + 按重要度排序
+    # 去重 + 按重要度排序；每类设上限，保证覆盖面（大仓库里接口有上百个，不能让链路题挤满题库）
+    caps = {"chain": max(3, limit // 5), "mechanism": limit // 3, "risk": limit // 5, "design": limit // 6 + 1}
     seen: set[str] = set()
+    per_kind: dict[str, int] = {}
     uniq = []
-    for item in sorted(c, key=lambda x: -x["importance"]):
-        if item["topic_key"] in seen:
+    for item in sorted(c, key=lambda x: (-x["importance"], -x.get("_score", 0), x["topic_key"])):
+        if item["topic_key"] in seen or per_kind.get(item["kind"], 0) >= caps.get(item["kind"], limit):
             continue
         seen.add(item["topic_key"])
+        per_kind[item["kind"]] = per_kind.get(item["kind"], 0) + 1
+        item.pop("_score", None)
         item["files"] = sorted({e["path"] for e in item["evidence"]})
         uniq.append(item)
     return uniq[:limit]

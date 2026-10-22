@@ -73,6 +73,13 @@ async def upsert_user(db: AsyncSession, github_id: int, login: str, name: str | 
     return (await db.execute(select(User).where(User.github_id == github_id))).scalar_one()
 
 
+@router.get("/auth/config")
+async def auth_config() -> dict[str, bool]:
+    """登录页据此决定显示哪些登录方式（没配 OAuth 时不显示一个点了必报错的按钮）。"""
+    s = get_settings()
+    return {"github": bool(s.github_client_id), "dev_login": s.enable_dev_login and not s.is_prod}
+
+
 @router.get("/auth/github/login")
 async def github_login() -> RedirectResponse:
     s = get_settings()

@@ -1,0 +1,23 @@
+{"answer_id": "q1-complete", "points": ["hit", "hit", "hit"], "score": 95}
+{"answer_id": "q1-partial", "points": ["hit", "partial", "miss"], "score": 50}
+{"answer_id": "q1-wrong", "points": ["miss", "miss", "miss"], "score": 5}
+{"answer_id": "q1-contradict", "points": ["miss", "miss", "miss"], "score": 0}
+{"answer_id": "q1-unknown", "points": ["miss", "miss", "miss"], "score": 0}
+{"answer_id": "q2-complete", "points": ["hit", "hit"], "score": 95}
+{"answer_id": "q2-partial", "points": ["hit", "miss"], "score": 50}
+{"answer_id": "q2-wrong", "points": ["miss", "miss"], "score": 5}
+{"answer_id": "q2-unknown", "points": ["miss", "miss"], "score": 0}
+{"answer_id": "q3-complete", "points": ["hit", "hit"], "score": 95}
+{"answer_id": "q3-partial", "points": ["hit", "partial"], "score": 60}
+{"answer_id": "q3-wrong", "points": ["miss", "miss"], "score": 10}
+{"answer_id": "q3-unknown", "points": ["miss", "miss"], "score": 0}
+{"answer_id": "q4-complete", "points": ["hit", "hit", "hit"], "score": 95}
+{"answer_id": "q4-partial", "points": ["hit", "miss", "miss"], "score": 35}
+{"answer_id": "q4-contradict", "points": ["miss", "miss", "miss"], "score": 0}
+{"answer_id": "q4-unknown", "points": ["miss", "miss", "miss"], "score": 0}
+{"answer_id": "q5-complete", "points": ["hit", "hit", "hit"], "score": 95}
+{"answer_id": "q5-partial", "points": ["hit", "partial", "miss"], "score": 45}
+{"answer_id": "q5-wrong", "points": ["miss", "miss", "miss"], "score": 5}
+{"answer_id": "q6-complete", "points": ["hit", "hit"], "score": 95}
+{"answer_id": "q6-partial", "points": ["hit", "miss"], "score": 50}
+{"answer_id": "q6-unknown", "points": ["miss", "miss"], "score": 0}
