@@ -90,7 +90,8 @@ services:
     depends_on:
       api: { condition: service_healthy }
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost/"]
+      # 用 127.0.0.1 而不是 localhost：Alpine 里 localhost 可能先解析成 IPv6 的 ::1，而 Nginx 只监听 IPv4，健康检查会一直失败
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/"]
       interval: 10s
       timeout: 3s
       retries: 10
