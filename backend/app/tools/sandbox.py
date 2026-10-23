@@ -9,9 +9,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import fnmatch
 import json
+import subprocess
 import time
 import uuid
 from collections.abc import Awaitable, Callable
@@ -20,6 +20,7 @@ from typing import Any
 
 from sqlalchemy import or_, select
 
+from app.core import proc
 from app.core.config import get_settings
 from app.core.db import session_scope
 from app.core.errors import AppError
@@ -186,15 +187,11 @@ class Sandbox:
         return "\n".join(lines) or "(没有匹配)"
 
     async def _rg(self, args: list[str]) -> str | None:
-        proc = await asyncio.create_subprocess_exec(
-            *args, cwd=str(self.root), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
         try:
-            out, err = await asyncio.wait_for(proc.communicate(), timeout=15)
-        except TimeoutError:
-            proc.kill()
+            code, out, err = await proc.run(args, cwd=str(self.root), timeout=15)
+        except subprocess.TimeoutExpired:
             return "(搜索超时)"
-        if proc.returncode == 2 and b"regex" in err.lower():
+        if code == 2 and b"regex" in err.lower():
             return None
         return out.decode(errors="replace")
 

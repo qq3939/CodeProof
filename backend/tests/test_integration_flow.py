@@ -146,6 +146,27 @@ async def test_session_resumes_after_restart(user_client: httpx.AsyncClient, ana
     await drain()
 
 
+async def test_checkpoint_setup_concurrent(app_ready: None) -> None:
+    # 夹具里让两个 setup_checkpointer() 在全新数据库上同时跑（模拟 api 和 worker 一起启动，P-013）。
+    # 没有排队时两边的 CREATE INDEX CONCURRENTLY 会死锁，被中断的索引会留成 INVALID
+    from sqlalchemy import text
+
+    from app.core.db import get_engine
+
+    async with get_engine().connect() as conn:
+        rows = (
+            await conn.execute(
+                text(
+                    "SELECT c.relname, i.indisvalid FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid"
+                    " WHERE c.relname LIKE 'checkpoint%'"
+                )
+            )
+        ).all()
+    names = {r[0] for r in rows}
+    assert {"checkpoints_thread_id_idx", "checkpoint_writes_thread_id_idx"} <= names
+    assert all(valid for _, valid in rows)
+
+
 async def test_concurrent_submit_creates_one_snapshot(app_ready: None) -> None:
     from sqlalchemy import func, select
 

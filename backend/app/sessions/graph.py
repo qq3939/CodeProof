@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import uuid
@@ -43,6 +44,8 @@ from app.tools.sandbox import Sandbox
 
 logger = logging.getLogger(__name__)
 MAX_VERIFY_CALLS = 5
+# setup_checkpointer 用的 advisory lock 编号：任意一个固定的数，只要别和其他地方的锁重复
+_SETUP_LOCK = 7_315_001
 
 
 class InterviewState(TypedDict, total=False):
@@ -473,13 +476,26 @@ async def setup_checkpointer() -> None:
     不能放在第一次请求里懒执行：setup() 里有 CREATE INDEX CONCURRENTLY，它要等数据库里
     所有已开始的事务结束；而请求自己的 SQLAlchemy 会话此时正开着事务，于是自己等自己，
     请求永远卡住（见 pitfalls）。用一条独立的 autocommit 连接、在没有请求的时候执行就没问题。
+
+    多个进程也不能同时执行：全新数据库上 api 和 worker 一起启动时，两边同时建表会撞唯一约束，
+    同时建索引会死锁（P-013）。所以先抢一把 advisory lock 排队。抢锁用 pg_try_advisory_lock
+    轮询，而不是阻塞的 pg_advisory_lock：阻塞等锁的那条语句本身是一个进行中的事务，
+    CREATE INDEX CONCURRENTLY 又要等它结束，还是会死锁。
     """
     from psycopg import AsyncConnection
 
     async with await AsyncConnection.connect(
         get_settings().sync_database_url, autocommit=True, prepare_threshold=0, row_factory=dict_row
     ) as conn:
-        await AsyncPostgresSaver(conn).setup()  # type: ignore[arg-type]
+        while True:
+            row = await (await conn.execute("SELECT pg_try_advisory_lock(%s) AS ok", (_SETUP_LOCK,))).fetchone()
+            if row and row["ok"]:
+                break
+            await asyncio.sleep(0.5)
+        try:
+            await AsyncPostgresSaver(conn).setup()  # type: ignore[arg-type]
+        finally:
+            await conn.execute("SELECT pg_advisory_unlock(%s)", (_SETUP_LOCK,))
 
 
 async def close_checkpointer() -> None:

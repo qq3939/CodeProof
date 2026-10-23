@@ -123,7 +123,8 @@ async def app_ready(infra: dict[str, str]) -> AsyncIterator[None]:
     async with get_engine().begin() as conn:
         for t in ("checkpoint_writes", "checkpoint_blobs", "checkpoints", "checkpoint_migrations"):
             await conn.execute(text(f"DROP TABLE IF EXISTS {t}"))
-    await setup_checkpointer()
+    # 同时调两次，模拟 api 和 worker 在全新数据库上一起启动（P-013）
+    await asyncio.gather(setup_checkpointer(), setup_checkpointer())
     await reset_engine()
     await reset_redis()
     await get_redis().flushdb()

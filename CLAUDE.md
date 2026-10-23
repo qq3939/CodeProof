@@ -23,7 +23,7 @@
 
 ## 环境
 
-- Windows + Docker Desktop（WSL2 后端）、Python 3.12（用 uv 管理）、Node.js LTS、Git。截至 2026-10-23，Docker Desktop 还没装（见 ROADMAP 的 B0-5）。
+- Windows + Docker Desktop（WSL2 后端）、Python 3.12（用 uv 管理）、Node.js LTS、Git。Docker Desktop 已于 2026-10-23 装好，本机 Compose 和完整测试都已跑通（B0-5）。在 Windows 本机跑后端要注意 P-011、P-014、P-015。
 - 端口：前端 8090、api 8000、Postgres 5433、Redis 6380。这些端口避开了项目 A，两个项目可以同时运行。
 - 密钥只放在 `.env` 里，只提交 `.env.example`。
 

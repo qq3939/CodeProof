@@ -9,13 +9,14 @@
 
 from __future__ import annotations
 
-import asyncio
 import os
 import re
 import shutil
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.core import proc
 from app.core.errors import AppError
 
 SAFE_CONFIG = ["-c", "core.hooksPath=/dev/null", "-c", "protocol.file.allow=always", "-c", "advice.detachedHead=false"]
@@ -40,22 +41,13 @@ def _env() -> dict[str, str]:
 
 
 async def run_git(args: list[str], cwd: str | Path | None = None, timeout: float = 60, check: bool = True) -> GitResult:
-    proc = await asyncio.create_subprocess_exec(
-        "git",
-        *SAFE_CONFIG,
-        *args,
-        cwd=str(cwd) if cwd else None,
-        env=_env(),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
     try:
-        out, err = await asyncio.wait_for(proc.communicate(), timeout=timeout)
-    except TimeoutError:
-        proc.kill()
-        await proc.wait()
+        code, out, err = await proc.run(
+            ["git", *SAFE_CONFIG, *args], cwd=str(cwd) if cwd else None, env=_env(), timeout=timeout
+        )
+    except subprocess.TimeoutExpired:
         raise GitError(f"git {args[0]} 超时（{timeout}s）") from None
-    res = GitResult(proc.returncode or 0, out.decode(errors="replace"), err.decode(errors="replace"))
+    res = GitResult(code, out.decode(errors="replace"), err.decode(errors="replace"))
     if check and res.code != 0:
         raise GitError(f"git {args[0]} 失败: {res.err.strip()[:500]}")
     return res

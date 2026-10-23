@@ -105,3 +105,27 @@
 - **解决**：符号链接单独拆成 `test_sandbox_symlink_escape`，建不了就 `pytest.skip` 并写明原因；其余三条测试不再依赖它。生产环境和 CI 都是 Linux，这条在那里照常执行。
 - **教训**：依赖平台能力的准备步骤不要放进共用夹具，否则一个前提不满足会连带其他测试一起失败；跳过时把原因写进 skip 信息，`pytest -rs` 能看到。
 - **相关提交**：`修复：Windows 本机的文件编码和符号链接测试问题`
+
+## P-013 全新数据库上 api 和 worker 同时启动，建检查点表时死锁
+
+- **现象**：Windows 本机第一次 `docker compose up -d --build`，命令报 `dependency failed to start: container project-b-api-1 is unhealthy`，frontend 没启动。api 日志里是 `psycopg.errors.DeadlockDetected`，出在启动时的 `setup_checkpointer()`；容器自动重启后又好了。在测试里让两个 `setup_checkpointer()` 同时跑，报的是另一个错：`UniqueViolation ... pg_type_typname_nsp_index`。
+- **原因**：api 和 worker 都在 `migrate` 结束后立刻启动，各自调用 LangGraph 的 `setup()` 建检查点表。两边同时 `CREATE TABLE IF NOT EXISTS` 会撞系统表的唯一约束；同时对一张表 `CREATE INDEX CONCURRENTLY` 会互相等待，被 Postgres 判成死锁。D-014 当时以为 `setup()` 幂等就能多进程同时执行，但幂等只保证"做两遍结果一样"，不保证"同时做不冲突"。只有全新数据库会遇到：表建好以后 `setup()` 什么都不做。CI 的测试只调用一次 `setup()`，测不出来；服务器第一次部署时就算撞上，容器自动重启后也会恢复，不容易察觉。
+- **解决**：`setup_checkpointer()` 先用 `pg_try_advisory_lock` 轮询抢锁，抢到再执行 `setup()`，一次只让一个进程建表。不能用阻塞的 `pg_advisory_lock`：阻塞等锁的那条语句本身是一个进行中的事务，`CREATE INDEX CONCURRENTLY` 要等所有已开始的事务结束，又会互等。测试夹具改成同时调两次 `setup_checkpointer()`，再加一个测试检查检查点索引都有效（被中断的 `CREATE INDEX CONCURRENTLY` 会留下 INVALID 的索引）。修复后用全新数据卷重新 `docker compose up`，api、worker 重启次数为 0。
+- **教训**：多个进程启动时都要做的初始化，要么交给只跑一次的步骤（像 `migrate` 服务），要么加锁排队；"幂等"不等于"并发安全"。线上清库重建（B0-4 第 3 步）正好是全新数据库，这次修复要先部署上去。
+- **相关提交**：`修复：检查点建表加锁排队；Windows 本机跑通完整测试`
+
+## P-014 Windows 上 psycopg 异步模式报 `ProactorEventLoop`
+
+- **现象**：Windows 本机跑集成测试，所有用到数据库的测试在准备阶段报 `psycopg.InterfaceError: Psycopg cannot use the 'ProactorEventLoop' to run in async mode`。
+- **原因**：Windows 上 asyncio 默认用 `ProactorEventLoop`，psycopg（LangGraph 的 Postgres 检查点在用）的异步模式不支持它，只能用 `SelectorEventLoop`。但 Windows 的 `SelectorEventLoop` 又不支持 `asyncio.create_subprocess_exec`，而调 git 和 ripgrep 用的正是它。两者不能同时满足。
+- **解决**：`app/__init__.py` 里判断是 Windows 时把事件循环策略换成 `WindowsSelectorEventLoopPolicy`；git 和 ripgrep 改成在线程里跑 `subprocess.run`（`app/core/proc.py`），哪种事件循环都能用。超时由 `subprocess.run(timeout=...)` 负责，它会先杀掉子进程再抛 `TimeoutExpired`。容器里是 Linux，行为不变。
+- **教训**：asyncio 的事件循环在 Windows 和 Linux 上默认实现不同，依赖底层 I/O 的库（数据库驱动、子进程）要分别确认。本机直接跑 api 时，`uvicorn --reload` 会自己用 `SelectorEventLoop`；不带 `--reload` 时 uvicorn 在 Windows 上用 `ProactorEventLoop`（`uvicorn/loops/asyncio.py`），psycopg 仍会报这个错。
+- **相关提交**：`修复：检查点建表加锁排队；Windows 本机跑通完整测试`
+
+## P-015 Windows 上 alembic 读 `alembic.ini` 报 `'gbk' codec can't decode`
+
+- **现象**：Windows 本机跑集成测试，准备数据库时 alembic 报 `UnicodeDecodeError: 'gbk' codec can't decode byte 0xa8`。本机直接跑 `uv run alembic upgrade head` 也一样。
+- **原因**：alembic 1.20 读配置文件时明确用 `encoding="locale"`（`alembic/util/compat.py` 的 `read_config_parser`），简体中文 Windows 上就是 GBK，而 `alembic.ini` 里有一行 UTF-8 的中文注释。这里没法像 P-011 那样在调用处指定编码。
+- **解决**：把 `alembic.ini` 里唯一一行中文注释改成英文，并注明这个文件要保持纯 ASCII。
+- **教训**：交给第三方库读的配置文件，编码由库决定；不确定时只写 ASCII。
+- **相关提交**：`修复：检查点建表加锁排队；Windows 本机跑通完整测试`

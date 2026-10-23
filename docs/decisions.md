@@ -18,7 +18,7 @@
 - **备选**：Redis 分布式锁（`SET NX` + 过期时间）。要处理锁过期、持锁进程崩溃、锁和数据库状态不一致等问题。
 - **为什么选它**：数据库唯一约束是"最终裁判"，即使锁失效也不可能插入两行；而且代码更少，不需要额外的锁服务。
 - **代价与风险**：快照建好但任务投递失败时，会留下一个 `queued` 的快照，需要靠运维页"重试"处理。
-- **相关代码**：`backend/app/repos/service.py:54`、`backend/app/models.py:91`、测试 `backend/tests/test_integration_flow.py:149`
+- **相关代码**：`backend/app/repos/service.py:54`、`backend/app/models.py:91`、测试 `backend/tests/test_integration_flow.py:170`
 
 ## D-002 调用关系用"近似解析"，不做完整的 Java 类型推导
 
@@ -45,7 +45,7 @@
 - **备选**：全部真流式，事后发现泄露再撤回（用户已经看到了）。
 - **为什么选它**：防泄露是硬要求，体验上的损失只是首字慢一点。
 - **代价与风险**：追问的首字延迟等于整段生成时间；containment 是词面相似度，换个说法的泄露检测不到。
-- **相关代码**：`backend/app/agents/interviewer.py:35`、`backend/app/sessions/graph.py:88`
+- **相关代码**：`backend/app/agents/interviewer.py:35`、`backend/app/sessions/graph.py:91`
 
 ## D-005 作答用 POST + fetch-event-source，而不是 WebSocket 或 EventSource
 
@@ -81,7 +81,7 @@
 - **备选**：只按文件路径 + 修改时间判断（git 检出后修改时间不可靠）；每次全量重做（简单但贵）。
 - **为什么选它**：内容哈希天然正确；`topic_key` 让"同一个考点"跨快照可识别，掌握度也依赖它。
 - **代价与风险**：考点证据之外的文件改了也可能影响考点（例如被调用方改了），这种情况会被错误复用。
-- **相关代码**：`backend/app/analysis/pipeline.py:101`、`backend/app/analysis/pipeline.py:302`、测试 `backend/tests/test_integration_flow.py:192`
+- **相关代码**：`backend/app/analysis/pipeline.py:101`、`backend/app/analysis/pipeline.py:303`、测试 `backend/tests/test_integration_flow.py:213`
 
 ## D-009 限流用 Redis 固定窗口
 
@@ -131,11 +131,12 @@
 ## D-014 LangGraph 检查点表在进程启动时建，不在第一次请求里建
 
 - **背景**：`AsyncPostgresSaver.setup()` 会执行 `CREATE INDEX CONCURRENTLY`，它要等数据库里所有已开始的事务结束。
-- **方案**：api 的 lifespan 和 worker 的 startup 里用一条独立的 autocommit 连接调用 `setup_checkpointer()`；`get_graph()` 不再建表。
+- **方案**：api 的 lifespan 和 worker 的 startup 里用一条独立的 autocommit 连接调用 `setup_checkpointer()`；`get_graph()` 不再建表。多个进程之间用 Postgres advisory lock 排队，一次只让一个进程执行 `setup()`。
 - **备选**：放进 Alembic 迁移（Alembic 默认在事务里执行，而 CONCURRENTLY 不能在事务里跑）；第一次请求时懒执行（会卡死，见 P-009）。
-- **为什么选它**：启动时没有请求事务；`setup()` 本身幂等，多进程同时执行也安全。
-- **代价与风险**：启动多一次数据库往返。
-- **相关代码**：`backend/app/sessions/graph.py:470`、`backend/app/main.py:27`
+- **为什么选它**：启动时没有请求事务；`setup()` 本身幂等，后启动的进程发现表已建好就什么都不做。
+- **v1 → v2**：v1 以为"幂等就能多进程同时执行"。2026-10-23 在 Windows 本机第一次 `docker compose up` 时，api 和 worker 在全新数据库上同时建表，api 报 `DeadlockDetected` 后被重启；测试里让两个 `setup_checkpointer()` 同时跑，又撞出 `UniqueViolation`（见 P-013）。幂等只保证"做两遍结果一样"，不保证"同时做不冲突"。v2 先用 `pg_try_advisory_lock` 轮询抢锁再执行 `setup()`；不用阻塞的 `pg_advisory_lock`，因为阻塞等锁的语句本身是进行中的事务，`CREATE INDEX CONCURRENTLY` 要等它结束，照样死锁。
+- **代价与风险**：启动多一次数据库往返；后启动的进程要等先启动的那个建完表才能继续启动。
+- **相关代码**：`backend/app/sessions/graph.py:473`、`backend/app/main.py:27`；测试 `backend/tests/test_integration_flow.py`（`test_checkpoint_setup_concurrent`）
 
 ## D-015 生产部署：Compose 覆盖文件 + Caddy 自动 HTTPS
 
@@ -167,7 +168,7 @@
   - 做 Python 支持：tree-sitter-python 的符号索引不难，但 Spring 画像、链路、候选考点都是按 Spring 写的，Python 要另写一套框架画像（FastAPI、Django 等），工作量接近再做一遍 M1。
 - **为什么选它**：用户自己的仓库都是公开的，也只写 Java，这两项都用不上；面试里它们的追问价值也低（一个是接入工作，一个是重复 M1），不如把时间花在有实测数据支撑的亮点上。
 - **代价与风险**：只能考公开仓库。克隆时设了 `GIT_TERMINAL_PROMPT=0`，私有仓库会直接克隆失败；SPEC 里"团队：合并前确认提交者讲得清"这个场景，在私有仓库上用不了，说服力打了折扣。被问到时说明这是有意的取舍。
-- **相关代码**：`backend/app/repos/git.py:38`（克隆不带凭据）、`backend/app/models.py:83`（`is_private` 字段保留，目前始终为 false）、`.env.example`（`GITHUB_APP_*`）；SPEC 3.1、3.3、M7
+- **相关代码**：`backend/app/repos/git.py:39`（克隆不带凭据）、`backend/app/models.py:83`（`is_private` 字段保留，目前始终为 false）、`.env.example`（`GITHUB_APP_*`）；SPEC 3.1、3.3、M7
 
 ## D-018 嵌入模型：阿里云百炼 text-embedding-v4，1024 维
 
