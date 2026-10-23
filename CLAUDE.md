@@ -4,14 +4,10 @@
 
 ## 开工须知
 
-- **第一次进入本项目**：先通读 `docs/SPEC.md`，再向用户确认 SPEC 第 1 节列出的信息：
-  - GitHub OAuth App；
-  - 管理员登录名；
-  - 模型服务。
-
-  然后从 M0 开始。模型 Key 还没拿到时，先用假模型（`LLM_PROVIDER=fake`）开发。
-- **之后每次进入**：先看 README 和 `git log`，确认做到了哪个里程碑，从中断的地方继续。
-- **推进方式**：按 SPEC 第 16 节的里程碑顺序推进。每个里程碑达到完成标准后，依次：跑测试 → `docker compose up` 验证 → 更新 README 和学习文档 → 提交 → 向用户汇报 → 继续下一个。
+- **每次进入先读 `docs/ROADMAP.md`**：M0–M5 已完成，M6、M7 部分完成，项目已上线 https://exam.fufu235.top （GitHub 登录、DeepSeek）。现在的工作是补真实评测和真实使用数据、让用户读懂项目、准备面试。ROADMAP 记录了当前状态、已定决策和任务清单，从第一个没勾的任务接着做；完成一项就在 ROADMAP 里勾掉并写上提交号。
+- **SPEC 的地位**：`docs/SPEC.md` 仍是功能边界的依据；ROADMAP 第 2 节的决策优先于 SPEC 中与之冲突的条目（评测仓库、M7 的取舍）。
+- **Git**：每项任务单独提交；不改写历史（不 rebase、不 amend 已推送的提交、不 force push）；推送前先确认用户同意。
+- **测试和 CI 仍然只用假模型**（`LLM_PROVIDER=fake`）；真实模型只用于线上和评测。
 - **范围**：
   - 不做 SPEC 第 3.3 节列出的内容；
   - 任何情况下都不运行被分析仓库里的代码；
@@ -27,7 +23,7 @@
 
 ## 环境
 
-- Windows + Docker Desktop（WSL2 后端）、Python 3.12（用 uv 管理）、Node.js LTS、Git。
+- Windows + Docker Desktop（WSL2 后端）、Python 3.12（用 uv 管理）、Node.js LTS、Git。截至 2026-10-23，Docker Desktop 还没装（见 ROADMAP 的 B0-5）。
 - 端口：前端 8090、api 8000、Postgres 5433、Redis 6380。这些端口避开了项目 A，两个项目可以同时运行。
 - 密钥只放在 `.env` 里，只提交 `.env.example`。
 
