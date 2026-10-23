@@ -4,7 +4,7 @@
 
 技术栈：Python 3.12 + FastAPI + LangGraph + PostgreSQL（pgvector）+ Redis（arq）+ Vue 3。完整规格见 [docs/SPEC.md](docs/SPEC.md)，当前进度和后续计划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
-**线上地址**：https://exam.fufu235.top （用 GitHub 账号登录；对话模型是 DeepSeek）。嵌入模型选定为阿里云百炼 `text-embedding-v4`（1024 维，D-018），线上配置更新后再验证知识库。
+**线上地址**：https://exam.fufu235.top （用 GitHub 账号登录；对话模型是 DeepSeek）。嵌入模型是阿里云百炼 `text-embedding-v4`（1024 维，D-018），线上知识库的上传和检索已验证可用。
 
 ## 架构
 
@@ -194,7 +194,6 @@ docs/             SPEC、设计决策、踩坑记录、学习文档、评测报�
 
 ## 还需要你提供或确认的
 
-- 线上换成 `text-embedding-v4`、`EMBEDDING_DIM=1024`：要清库重建，步骤见 [docs/deploy.md](docs/deploy.md) 第 9 步。
 - 仓库画像的人工抽查（M1 完成标准）。
 - 评测集的审题和人工标注：spring-petclinic 和 code-nest 各 20 题，题目和回答由 AI 起草。
 

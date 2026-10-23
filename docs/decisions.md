@@ -185,5 +185,5 @@
   - OpenAI `text-embedding-3`：服务器在香港，不在 OpenAI API 支持的地区。
   - 维度保留 256：不用清库，但截得越短检索效果损失越大。
 - **为什么选它**：同系列模型在中文（C-MTEB）和代码检索（MTEB-Code）上的公开成绩都高；有官方的 OpenAI 兼容文档，参数和限制写得清楚；国内付款方便，每百万 token 0.5 元。1024 是 v4 的默认维度，低于 pgvector HNSW 索引 2000 维的上限；线上还没有真实用户，正好清库。
-- **代价与风险**：多一家服务商、多一个 Key；阿里云没说 v4 对应 Qwen3-Embedding 的哪个尺寸，评测报告里引用公开分数时只能当参考；批大小 10 意味着同样的文本要发更多次请求（量很小，影响可以忽略）；这些参数还没用真实 Key 实测过，要等线上上传笔记验证。
+- **代价与风险**：多一家服务商、多一个 Key；阿里云没说 v4 对应 Qwen3-Embedding 的哪个尺寸，评测报告里引用公开分数时只能当参考；批大小 10 意味着同样的文本要发更多次请求（量很小，影响可以忽略）；这些参数在 2026-10-23 线上清库重建后实测过：知识库上传笔记、检索测试都正常。
 - **相关代码**：`backend/app/llm/providers.py:183`（`embed`）、`backend/app/llm/client.py:276`（分批和维度校验）、`backend/app/core/config.py:64`；测试 `backend/tests/test_unit_misc.py`（`test_embed_*`）；部署步骤见 `docs/deploy.md` 第 9 步
