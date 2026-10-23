@@ -1,7 +1,7 @@
 # CodeProof 现状与后续计划
 
 > 给在任何环境（本机或云端）进入本项目的 Claude 会话读。M0–M5 已完成，M6、M7 部分完成，项目已经上线。现在的工作是：补上真实模型的评测和真实使用数据，让用户读懂项目，把它变成能写进简历的项目。
-> 制定于 2026-10-23；最后更新 2026-10-23（B0-1、B0-2 完成，B0-4、B0-5 部分完成）。
+> 制定于 2026-10-23；最后更新 2026-10-23（B0-1、B0-2、B0-5 完成；B0-4 的 AI 部分完成，等用户更新线上）。
 
 ## 0. 进入本项目先读
 
@@ -22,7 +22,7 @@
 
 | 能写进简历的条件 | 状态 |
 |---|---|
-| CI 通过；干净克隆能构建；本机（Windows）能跑测试 | CI 通过；Windows 上 ruff、mypy、前端构建和单元测试已跑通（10-23）；本机还没装 Docker，集成测试和 Compose 没跑过 |
+| CI 通过；干净克隆能构建；本机（Windows）能跑测试 | CI 通过；Windows 本机 Compose 全部服务 healthy，完整测试 41 个通过、1 个按设计跳过（10-23，B0-5） |
 | 小步提交，不改写历史；没有临时文件和密钥 | 11 个提交，后端主体在一个提交里（`02766d1`）；历史改写过一次，不再改；`backend/tests/fixtures/mini-feed/.env` 是故意放的假值，用来测敏感文件拦截 |
 | README 写实情 | 已更新：线上地址、架构图、作答时序图、里程碑状态（B0-1） |
 | 至少 3 条亮点有实测数据 | 只有假模型跑出的 small 套件（242 行夹具、6 题），指标没有参考意义 |
@@ -39,12 +39,12 @@ SPEC 里程碑中还没达到完成标准的部分：
 | M6 | 用真实模型跑出的完整报告；人工标注的评测集 |
 | M7 | 没在 Claude Code 里通过 MCP 真正走过一遍；GitHub App 已决定搁置 |
 
-**可能存在的线上故障**：如果服务器 `.env` 里还是默认的 `EMBEDDING_MODEL=fake-embedding`，知识库的上传和检索会调用 `OpenAICompatibleProvider.embed`（`backend/app/llm/providers.py:181`），把请求发给 DeepSeek，而 DeepSeek 没有嵌入接口。默认的 agentic 检索不调用嵌入，所以考核流程不受影响；只有 `RETRIEVAL_MODE` 设为 vector 或 hybrid 时，仓库分析才会建向量索引（`backend/app/analysis/pipeline.py:249`）。
+**可能存在的线上故障**：如果服务器 `.env` 里还是默认的 `EMBEDDING_MODEL=fake-embedding`，知识库的上传和检索会调用 `OpenAICompatibleProvider.embed`（`backend/app/llm/providers.py:183`），把请求发给 DeepSeek，而 DeepSeek 没有嵌入接口（`4ee5828` 之后改成直接报"还没有配置嵌入模型"，B0-4 第 4 步更新线上配置后消除）。默认的 agentic 检索不调用嵌入，所以考核流程不受影响；只有 `RETRIEVAL_MODE` 设为 vector 或 hybrid 时，仓库分析才会建向量索引（`backend/app/analysis/pipeline.py:250`）。
 
 ## 2. 已定决策（2026-10-23）
 
 1. **评测仓库**：人工标注的评测集用 **spring-petclinic**（小型）和 **code-nest**（项目 A，中型，https://github.com/qq3939/code-nest ）各 20 题；技术派只用来测分析耗时和成本，不做标注。原因：用户没读过技术派，标注不可靠；code-nest 是用户要读透的项目。这改动了 SPEC 15.1、15.2 和 M6。
-2. **模型**：对话模型用 DeepSeek（线上已接）。嵌入模型还没选，在任务 B0-4 里做完对比再定；必须在请同学使用之前定下来，因为改 `EMBEDDING_DIM` 要清库。
+2. **模型**：对话模型用 DeepSeek（线上已接）。嵌入模型用阿里云百炼 `text-embedding-v4`、`EMBEDDING_DIM=1024`（10-23 用户选定，见 D-018）；线上要在请同学使用之前换好，因为改 `EMBEDDING_DIM` 要清库。
 3. **GitHub App 接入私有仓库先搁置**，投递之后再议；**Python 仓库支持不做**。原因：用户自己用不上，面试价值低。这改动了 SPEC 的 M7。
 4. **提交历史不再改写**。被问到时如实说明"代码主要由 AI 生成，需求拆解、方案选择、测试、评测和排错是我做的"。
 5. **用本项目考用户自己读项目 A**：用户每读完项目 A 的一个里程碑，就在线上考自己 1–2 场。这是本项目最真实的起因（AI 写的代码，要确认自己讲得清），也是真实使用数据的主要来源；用的过程中发现的问题由 AI 修复、单独提交，值得讲的写成 decision（"v1 怎么做 → 遇到什么问题 → v2 怎么改"）。
@@ -61,14 +61,14 @@ SPEC 里程碑中还没达到完成标准的部分：
   - 加线上地址；
   - 加一张 Mermaid 架构图（浏览器 → Caddy / Nginx → api → Postgres、Redis → worker → 模型服务；MCP 客户端 → api），再加一张"作答 → 面试官图 → 查代码 → 追问或阅卷"的时序图。
 - [x] **B0-2（AI）按第 2 节改 SPEC**（`8117aca`）：SPEC 15.1、15.2、M6 的评测仓库，M7 的 GitHub App 和 Python 支持；在 `docs/decisions.md` 里加 D-016（评测仓库）和 D-017（M7 的取舍），格式按已有条目。
-- [ ] **B0-3（用户）核查线上嵌入配置**：登录服务器看 `.env` 里的 `EMBEDDING_MODEL`，或者直接在网页"知识库"上传一篇笔记，看会不会报错。把结果告诉 AI。
+- [ ] **B0-3（用户）核查线上嵌入配置**：登录服务器看 `.env` 里的 `EMBEDDING_MODEL`，或者直接在网页"知识库"上传一篇笔记，看会不会报错。把结果告诉 AI。（10-23 补充：嵌入模型已选定，B0-4 第 4 步会直接换掉这组配置，这一项可以和它一起做，不必单独核查。）
 - [ ] **B0-4（AI 对比，用户选）选嵌入模型并接到线上**：
-  1. [x] 写一份对比，放在 `docs/eval/embedding-choice.md`：价格、支持的维度、中文和代码检索效果、是否兼容 OpenAI 接口、是否和 DeepSeek 共用一个 Key（`78a64ee`；推荐阿里云百炼 `text-embedding-v4`、1024 维，**等用户选**）；
-  2. 用户选定后，把 `providers.py:189` 只对 `text-embedding-3` 传 `dimensions` 的写法改成可配置，加测试；同时把 `client.py:281` 写死的批大小 64 改成可配置（阿里云单次最多 10 条、硅基流动 32 条），并固定 `encoding_format="float"`；
-  3. 定下 `EMBEDDING_DIM`。如果和现在的 256 不同，线上要清库重建：现在线上没有真实用户，正好是清库的时机；
-  4. 用户按 `docs/deploy.md` 第 9 步更新线上配置，然后上传一篇笔记验证知识库可用。
-- [ ] **B0-5（AI，用户在旁看结果）在 Windows 本机跑通**：`docker compose up -d --build`，所有服务 healthy；`cd backend && uv sync && uv run pytest -q`；`uv run ruff check . && uv run mypy`；`cd frontend && npm run build`。遇到的 Windows 特有问题记进 `pitfalls.md`。
-  - 2026-10-23 进度（Docker 还没装，只做了不依赖 Docker 的部分）：`uv sync`、`ruff check`、`ruff format --check`、`mypy`、`npm run build` 通过；单元测试（`tests/test_unit_*.py`）修了两个 Windows 问题后 21 个通过、1 个按设计跳过（建符号链接要管理员权限），见 P-011、P-012（`30eca2e`）。**还差**：装 Docker Desktop 后跑 `docker compose up -d --build` 和含集成测试的完整 `uv run pytest -q`。
+  1. [x] 写一份对比，放在 `docs/eval/embedding-choice.md`：价格、支持的维度、中文和代码检索效果、是否兼容 OpenAI 接口、是否和 DeepSeek 共用一个 Key（`78a64ee`；用户选定阿里云百炼 `text-embedding-v4`、1024 维）；
+  2. [x] 用户选定后，把 `providers.py:189` 只对 `text-embedding-3` 传 `dimensions` 的写法改成可配置，加测试；同时把 `client.py:281` 写死的批大小 64 改成可配置（阿里云单次最多 10 条、硅基流动 32 条），并固定 `encoding_format="float"`（`4ee5828`，D-018）；
+  3. [x] 定下 `EMBEDDING_DIM`：1024。和现在的 256 不同，线上要清库重建：现在线上没有真实用户，正好是清库的时机；
+  4. **（用户）** 先确认代码已推送到 GitHub，再按 `docs/deploy.md`"以后更新代码"把最新代码部署到服务器（含 `b584223` 的检查点建表修复，否则清库后第一次启动可能死锁，见 P-013），再按 `docs/deploy.md` 第 9 步更新线上配置，然后上传一篇笔记验证知识库可用。
+- [x] **B0-5（AI，用户在旁看结果）在 Windows 本机跑通**（`30eca2e`、`b584223`）：`docker compose up -d --build`，所有服务 healthy；`cd backend && uv sync && uv run pytest -q`；`uv run ruff check . && uv run mypy`；`cd frontend && npm run build`。遇到的 Windows 特有问题记进 `pitfalls.md`。
+  - 2026-10-23 记录：没装 Docker 时先跑了不依赖 Docker 的部分，`uv sync`、`ruff check`、`ruff format --check`、`mypy`、`npm run build` 通过；单元测试（`tests/test_unit_*.py`）修了两个 Windows 问题后 21 个通过、1 个按设计跳过（建符号链接要管理员权限），见 P-011、P-012（`30eca2e`）。装好 Docker 后：第一次 `docker compose up` 时 api 在全新数据库上建检查点表死锁（P-013，不是 Windows 特有，线上清库后也会遇到）；集成测试又遇到 psycopg 不支持 Windows 默认事件循环（P-014）和 alembic 按 GBK 读配置（P-015）。都修完后，用全新数据卷 `docker compose up -d --build` 五个常驻服务全部 healthy、migrate 正常退出、api 和 worker 零重启，完整 `uv run pytest -q` 41 个通过、1 个跳过。
 - [ ] **B0-6（用户）线上第一次真实使用**：用 GitHub 登录，提交 https://github.com/qq3939/code-nest ，分析完成后考一场 3 题的"项目深挖"，看报告。AI 根据结果新建 `docs/usage.md`（格式见第 4 节），记下第一条。
 - [ ] **B0-7（用户决定）** 本地的 `backup/before-remove-coauthor` 分支要不要删。GitHub 仓库已改名为 https://github.com/qq3939/CodeProof ，旧地址 `qq3939/project_b` 会自动重定向。
 
@@ -143,7 +143,7 @@ SPEC 里程碑中还没达到完成标准的部分：
 
 ## 5. 验收：什么时候算"能写进简历"
 
-- [ ] 用户本机能启动、能跑全部测试（B0-5）
+- [x] 用户本机能启动、能跑全部测试（B0-5）
 - [x] README 写的是实情，有架构图和线上地址（B0-1）
 - [ ] 有一份真实模型的完整评测报告，至少 3 条亮点有数据（B3-8）
 - [ ] 至少 3 个人用过，使用数据记在 `usage.md`（B1-1、B3-9）
