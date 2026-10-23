@@ -60,7 +60,12 @@ class Settings(BaseSettings):
     embedding_base_url: str = ""
     embedding_api_key: str = ""
     embedding_model: str = "fake-embedding"
-    embedding_dim: int = 256
+    # pgvector 的 HNSW 索引最多支持 2000 维，超了迁移建索引会失败，所以启动时就拦下
+    embedding_dim: int = Field(default=256, ge=1, le=2000)
+    # 请求里带上 dimensions，让服务商把向量截到 EMBEDDING_DIM；维度固定、不认这个参数的模型（如 bge-m3）设成 false
+    embedding_send_dimensions: bool = True
+    # 每次请求最多几条：阿里云百炼 10、硅基流动 32、智谱 64，默认取最小的，接哪家都不会超
+    embedding_batch_size: int = Field(default=10, ge=1)
 
     # ---- 计费：{"model": {"input": 每百万输入 Token 价格, "output": 每百万输出 Token 价格}} ----
     llm_price_table: dict[str, dict[str, float]] = Field(default_factory=dict)

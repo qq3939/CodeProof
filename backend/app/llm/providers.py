@@ -94,8 +94,10 @@ class OpenAICompatibleProvider:
     json_schema strict 模式：兼容的服务商更多（见 D-006）。
     """
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, embed_http_client: Any = None) -> None:
         self.s = settings
+        # 只给测试用：传入挂了 httpx.MockTransport 的客户端，不发真实请求也能检查嵌入请求体
+        self._embed_http_client = embed_http_client
 
     def _chat(self, model: str, temperature: float, **kw: Any) -> Any:
         from langchain_openai import ChatOpenAI
@@ -181,13 +183,24 @@ class OpenAICompatibleProvider:
     async def embed(self, texts: list[str]) -> list[list[float]]:
         from langchain_openai import OpenAIEmbeddings
 
+        if self.s.embedding_model.startswith("fake"):
+            # 对话模型接了真实服务、嵌入模型却还是默认值时，请求会发给对话模型的服务商（比如没有嵌入接口的
+            # DeepSeek），报出来的错让人看不懂。这里直接说清楚缺什么
+            raise LLMFatalError(
+                "还没有配置嵌入模型：设置 EMBEDDING_MODEL、EMBEDDING_BASE_URL、EMBEDDING_API_KEY 后才能用知识库和向量检索"
+            )
         emb = OpenAIEmbeddings(
             model=self.s.embedding_model,
             # 很多服务商对话和嵌入是同一个地址和 Key，没单独配就沿用对话模型的
             base_url=self.s.embedding_base_url or self.s.llm_base_url or None,
             api_key=self.s.embedding_api_key or self.s.llm_api_key or "none",  # type: ignore[arg-type]
-            dimensions=self.s.embedding_dim if "text-embedding-3" in self.s.embedding_model else None,
+            # 不传 dimensions，服务商会返回模型的默认维度（阿里云 v4 是 1024、Qwen3-8B 是 4096），
+            # 和数据库向量列的维度对不上。维度固定、不认这个参数的模型（如 bge-m3）用配置关掉
+            dimensions=self.s.embedding_dim if self.s.embedding_send_dimensions else None,
             check_embedding_ctx_length=False,  # 非 OpenAI 服务商不认 tiktoken 分好的 token 数组
+            # openai SDK 默认要 base64 再自己解码，不是每家都支持；要 float 最稳
+            model_kwargs={"encoding_format": "float"},
+            http_async_client=self._embed_http_client,
             max_retries=2,
         )
         try:

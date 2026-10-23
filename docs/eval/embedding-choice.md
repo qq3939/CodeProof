@@ -4,6 +4,8 @@
 
 ## 结论
 
+> **已选定（2026-10-23）**：阿里云百炼 `text-embedding-v4`，`EMBEDDING_DIM=1024`，见 D-018。
+
 **推荐：阿里云百炼 `text-embedding-v4`，`EMBEDDING_DIM=1024`。** 备选是硅基流动的 `Qwen/Qwen3-Embedding-8B`（同一系列的开源模型）。需要你定的只有两件事：用哪一家，维度是不是 1024。
 
 理由：

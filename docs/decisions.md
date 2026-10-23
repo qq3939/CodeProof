@@ -168,3 +168,21 @@
 - **为什么选它**：用户自己的仓库都是公开的，也只写 Java，这两项都用不上；面试里它们的追问价值也低（一个是接入工作，一个是重复 M1），不如把时间花在有实测数据支撑的亮点上。
 - **代价与风险**：只能考公开仓库。克隆时设了 `GIT_TERMINAL_PROMPT=0`，私有仓库会直接克隆失败；SPEC 里"团队：合并前确认提交者讲得清"这个场景，在私有仓库上用不了，说服力打了折扣。被问到时说明这是有意的取舍。
 - **相关代码**：`backend/app/repos/git.py:38`（克隆不带凭据）、`backend/app/models.py:83`（`is_private` 字段保留，目前始终为 false）、`.env.example`（`GITHUB_APP_*`）；SPEC 3.1、3.3、M7
+
+## D-018 嵌入模型：阿里云百炼 text-embedding-v4，1024 维
+
+- **背景**：对话模型用 DeepSeek，但 DeepSeek 没有嵌入接口，知识库和向量检索需要另找一家。原来的代码只适配了 OpenAI：只对 `text-embedding-3` 传 `dimensions`，每批写死 64 条，返回格式用 openai SDK 默认的 base64。数据库向量列的维度在第一次迁移时定死，改维度要清库，所以必须在有真实用户之前定下来。
+- **方案**：用阿里云百炼 `text-embedding-v4`，`EMBEDDING_DIM=1024`。代码改成：
+  - `EMBEDDING_SEND_DIMENSIONS`（默认 true）决定请求里带不带 `dimensions`，维度固定的模型可以关掉；
+  - `EMBEDDING_BATCH_SIZE`（默认 10）决定每次请求几条，阿里云单次最多 10 条；
+  - 固定 `encoding_format="float"`；
+  - 返回的向量维度和 `EMBEDDING_DIM` 不一致、或者对话模型接了真实服务而嵌入模型还是假模型时，直接报出原因。
+- **备选**（详细对比见 `docs/eval/embedding-choice.md`）：
+  - 硅基流动 `Qwen/Qwen3-Embedding-8B`：和 v4 同系列的开源模型，分数可以直接引用；但国内站价格没查到，文档对单条长度的说法前后矛盾。
+  - 硅基流动 `bge-m3`：免费，但代码检索比 Qwen3 系列低二十多分，会让评测里向量检索这一组被嵌入模型拖累。
+  - 智谱 `embedding-3`：价格相同，但找不到公开的检索成绩，单条上限 3072 token 偏短。
+  - OpenAI `text-embedding-3`：服务器在香港，不在 OpenAI API 支持的地区。
+  - 维度保留 256：不用清库，但截得越短检索效果损失越大。
+- **为什么选它**：同系列模型在中文（C-MTEB）和代码检索（MTEB-Code）上的公开成绩都高；有官方的 OpenAI 兼容文档，参数和限制写得清楚；国内付款方便，每百万 token 0.5 元。1024 是 v4 的默认维度，低于 pgvector HNSW 索引 2000 维的上限；线上还没有真实用户，正好清库。
+- **代价与风险**：多一家服务商、多一个 Key；阿里云没说 v4 对应 Qwen3-Embedding 的哪个尺寸，评测报告里引用公开分数时只能当参考；批大小 10 意味着同样的文本要发更多次请求（量很小，影响可以忽略）；这些参数还没用真实 Key 实测过，要等线上上传笔记验证。
+- **相关代码**：`backend/app/llm/providers.py:183`（`embed`）、`backend/app/llm/client.py:276`（分批和维度校验）、`backend/app/core/config.py:64`；测试 `backend/tests/test_unit_misc.py`（`test_embed_*`）；部署步骤见 `docs/deploy.md` 第 9 步

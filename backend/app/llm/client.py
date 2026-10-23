@@ -277,11 +277,19 @@ class LLMClient:
         if not texts:
             return []
         out: list[list[float]] = []
-        # 分批：大多数服务商单次上限在 64~2048 条之间，取个保守值
-        for i in range(0, len(texts), 64):
-            batch = texts[i : i + 64]
+        # 分批：各家单次条数上限不同（阿里云百炼 10、硅基流动 32、智谱 64），超了整批被拒
+        size = self.s.embedding_batch_size
+        for i in range(0, len(texts), size):
+            batch = texts[i : i + size]
             vecs = await self._with_retry(lambda b=batch: self.provider.embed(b))  # type: ignore[misc]
             out.extend(vecs)
+        # 维度不对时在这里报清楚原因；否则要等写入 pgvector 时才报一个看不出原因的错
+        wrong = next((len(v) for v in out if len(v) != self.s.embedding_dim), None)
+        if wrong is not None:
+            raise LLMFatalError(
+                f"嵌入模型返回了 {wrong} 维向量，但 EMBEDDING_DIM={self.s.embedding_dim}；"
+                "检查 EMBEDDING_MODEL、EMBEDDING_DIM 和 EMBEDDING_SEND_DIMENSIONS"
+            )
         if ctx is not None:
             await accounting.record(
                 ctx, self.s.embedding_model, Usage(prompt_tokens=sum(len(t) for t in texts) // 4), 0, "ok", None, self.s

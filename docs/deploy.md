@@ -270,24 +270,27 @@ curl -s https://exam.fufu235.top/api/health
 
 **【服务器】** `nano .env`，修改：
 
+对话模型用 DeepSeek，嵌入模型用阿里云百炼的 `text-embedding-v4`（选型见 `docs/eval/embedding-choice.md`、D-018）。DeepSeek 没有嵌入接口，所以嵌入的地址和 Key 要单独填，留空就会沿用 DeepSeek 的，知识库会报"还没有配置嵌入模型"或请求失败。
+
 ```
 LLM_PROVIDER=openai_compatible
-LLM_BASE_URL=https://api.deepseek.com/v1      # 你的服务商地址
-LLM_API_KEY=你的 Key
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_API_KEY=你的 DeepSeek Key
 LLM_MODEL_STRONG=...
 LLM_MODEL_FAST=...
-EMBEDDING_MODEL=...
-EMBEDDING_DIM=...                              # 必须和嵌入模型的维度一致
-LLM_PRICE_TABLE={"模型名": {"input": 价格, "output": 价格}}
+EMBEDDING_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+EMBEDDING_API_KEY=你的阿里云百炼 Key
+EMBEDDING_MODEL=text-embedding-v4
+EMBEDDING_DIM=1024                             # 必须和请求的维度一致，最大 2000
+EMBEDDING_SEND_DIMENSIONS=true
+EMBEDDING_BATCH_SIZE=10                        # 阿里云单次最多 10 条
+LLM_PRICE_TABLE={"对话模型名": {"input": 价格, "output": 价格}, "text-embedding-v4": {"input": 0.5, "output": 0}}
 ```
 
-然后让 api 和 worker 重新读取配置：
+- 阿里云百炼的 Key 在百炼控制台的"API-KEY"页面创建，开通百炼需要实名认证。`dashscope.aliyuncs.com` 是旧域名，官方说仍然可用；也可以换成控制台里业务空间的专属域名 `https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`。
+- 价格表里的单位要和其他模型保持一致：上面按"元 / 百万 token"写，`text-embedding-v4` 是 0.5。
 
-```bash
-docker compose up -d --force-recreate api worker
-```
-
-**注意 `EMBEDDING_DIM`**：数据库的向量列是按第一次迁移时的维度建的。如果新嵌入模型的维度不是 256，要清空数据库重建（**会删掉所有用户、仓库和考核记录**）：
+**注意 `EMBEDDING_DIM`**：数据库的向量列是按第一次迁移时的维度建的。默认是 256，换成 1024 必须清空数据库重建（**会删掉所有用户、仓库和考核记录**），只改 `.env` 不重建的话，写入向量时会报维度不一致：
 
 ```bash
 docker compose down
@@ -295,7 +298,13 @@ docker volume rm project-b_pgdata
 bash deploy/deploy.sh
 ```
 
-所以最好在正式有人使用之前就把模型定下来。
+所以最好在正式有人使用之前就把模型定下来。如果 `EMBEDDING_DIM` 没变（比如只换了对话模型），不用清库，让 api 和 worker 重新读取配置即可：
+
+```bash
+docker compose up -d --force-recreate api worker
+```
+
+**验证**：用 GitHub 登录，在"知识库"页面上传一篇 Markdown 笔记，等它处理完，在页面下方的"检索测试"里搜一个笔记里的词，结果里能看到这篇笔记和出处就说明嵌入接通了。失败时看 worker 日志：`docker compose logs worker --tail 50`。
 
 ---
 

@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import httpx
 import pytest
+from pydantic import ValidationError
 
 from app.agents.interviewer import leaks
 from app.analysis import evidence
+from app.core.config import Settings
 from app.kb.service import split_markdown
+from app.llm.client import LLMClient
+from app.llm.providers import OpenAICompatibleProvider
+from app.llm.types import LLMFatalError
 from app.mastery.service import apply_score, ema, next_interval, pick
 from app.retrieval.rrf import rrf
 from app.tools.sandbox import Sandbox
@@ -127,3 +134,59 @@ def test_kb_split() -> None:
     big = [c for h, c in chunks if h == "Redis > 数据结构"]
     assert len(big) >= 2 and all(len(c) <= 800 for c in big)
     assert big[0][-100:] == big[1][:100]  # 相邻块重叠 100 字
+
+
+def _embed_client(returned_dim: int, requests: list[dict], **overrides: object) -> LLMClient:
+    """接一个假的嵌入服务：记下每次请求体，返回 returned_dim 维的向量。不发真实请求。"""
+
+    def handler(req: httpx.Request) -> httpx.Response:
+        body = json.loads(req.content)
+        requests.append({"path": req.url.path, **body})
+        data = [
+            {"object": "embedding", "index": i, "embedding": [0.1] * returned_dim} for i in range(len(body["input"]))
+        ]
+        return httpx.Response(200, json={"object": "list", "data": data, "model": body["model"], "usage": {}})
+
+    conf: dict[str, object] = {
+        "llm_provider": "openai_compatible",
+        "embedding_base_url": "https://embedding.example/v1",
+        "embedding_api_key": "test-key",
+        "embedding_model": "text-embedding-v4",
+        "embedding_dim": 1024,
+        **overrides,
+    }
+    s = Settings(_env_file=None, **conf)  # type: ignore[call-arg, arg-type]  # 不读本机 .env，避免受真实配置影响
+    http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    return LLMClient(s, OpenAICompatibleProvider(s, embed_http_client=http))
+
+
+async def test_embed_request_matches_provider_limits() -> None:
+    # 阿里云百炼单次最多 10 条：23 条要拆成 10 + 10 + 3；每次都带 dimensions 和 encoding_format=float
+    reqs: list[dict] = []
+    vecs = await _embed_client(1024, reqs).embed([f"text {i}" for i in range(23)])
+    assert len(vecs) == 23 and all(len(v) == 1024 for v in vecs)
+    assert [len(r["input"]) for r in reqs] == [10, 10, 3]
+    assert all(r["path"] == "/v1/embeddings" and r["model"] == "text-embedding-v4" for r in reqs)
+    assert all(r["dimensions"] == 1024 and r["encoding_format"] == "float" for r in reqs)
+
+
+async def test_embed_without_dimensions_and_dim_mismatch() -> None:
+    # 维度固定的模型：关掉 dimensions 参数；服务商返回的维度和 EMBEDDING_DIM 不一致时要报清楚原因
+    reqs: list[dict] = []
+    client = _embed_client(4096, reqs, embedding_send_dimensions=False, embedding_batch_size=32)
+    with pytest.raises(LLMFatalError, match="4096 维.*EMBEDDING_DIM=1024"):
+        await client.embed(["a", "b"])
+    assert len(reqs) == 1 and "dimensions" not in reqs[0]
+
+
+async def test_embed_requires_configured_model() -> None:
+    # 对话模型接了真实服务、嵌入模型还是默认的假模型：直接报"没配置"，不把请求发给对话模型的服务商
+    reqs: list[dict] = []
+    with pytest.raises(LLMFatalError, match="还没有配置嵌入模型"):
+        await _embed_client(1024, reqs, embedding_model="fake-embedding").embed(["a"])
+    assert reqs == []
+
+
+def test_embedding_dim_limit() -> None:
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None, embedding_dim=4096)  # type: ignore[call-arg]
