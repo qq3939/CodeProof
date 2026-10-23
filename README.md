@@ -2,7 +2,84 @@
 
 代码理解考核 Agent：提交一个 Java / Spring Boot 仓库，AI 当考官，**以代码为证据**考你对这个仓库的理解——会追问、会给分级提示、会查代码核对你的说法，结束后给出逐要点的评分报告和复习计划。
 
-技术栈：Python 3.12 + FastAPI + LangGraph + PostgreSQL（pgvector）+ Redis（arq）+ Vue 3。完整规格见 [docs/SPEC.md](docs/SPEC.md)。
+技术栈：Python 3.12 + FastAPI + LangGraph + PostgreSQL（pgvector）+ Redis（arq）+ Vue 3。完整规格见 [docs/SPEC.md](docs/SPEC.md)，当前进度和后续计划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+
+**线上地址**：https://exam.fufu235.top （用 GitHub 账号登录；对话模型是 DeepSeek）。嵌入模型还没选定，线上的知识库功能暂未验证。
+
+## 架构
+
+```mermaid
+flowchart TB
+    B["浏览器"]
+    CC["Claude Code 等 MCP 客户端"]
+    MCP["MCP Server（本机进程）<br/>app/mcp_server.py"]
+    CC -->|stdio| MCP
+
+    subgraph compose["Docker Compose"]
+        Caddy["Caddy<br/>HTTPS 终结（只在生产环境）"]
+        Nginx["frontend（Nginx）<br/>静态资源 + 转发 /api"]
+        API["api（FastAPI）<br/>接口、SSE、面试官图"]
+        W["worker（arq）<br/>克隆、分析、出题、阅卷、报告"]
+        PG[("PostgreSQL + pgvector<br/>业务数据、向量<br/>检查点、trace")]
+        R[("Redis<br/>任务队列、进度推送<br/>限流、会话锁")]
+        Repo[["仓库卷 /data/repos"]]
+    end
+
+    LLM["模型服务<br/>对话：DeepSeek；嵌入：待定"]
+
+    B -->|HTTPS| Caddy
+    MCP -->|"HTTPS + 个人 API 令牌"| Caddy
+    Caddy --> Nginx
+    Nginx -->|/api| API
+    API --> PG
+    API -->|投递任务| R
+    R <-->|取任务、推进度| W
+    W --> PG
+    W -->|克隆、清理| Repo
+    API -. 只读 .-> Repo
+    API --> LLM
+    W --> LLM
+```
+
+本机运行时没有 Caddy，浏览器和 MCP Server 直接访问 Nginx 的 8090 端口。api 和 worker 是同一个镜像，只是启动命令不同；api 只读挂载仓库卷，写仓库的操作只在 worker 里做（[D-010](docs/decisions.md)）。
+
+一次作答在后端的经过（[backend/app/sessions/graph.py](backend/app/sessions/graph.py)、[backend/app/sessions/service.py](backend/app/sessions/service.py)）：
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as 浏览器
+    participant A as api
+    participant G as 面试官图（LangGraph）
+    participant S as 工具沙箱
+    participant L as 模型服务
+    participant W as worker
+    participant DB as Postgres
+
+    U->>A: POST /api/sessions/{id}/answer
+    A->>A: 加 Redis 锁 sess-lock:{id}，同一会话同一时间只推进一次
+    A->>G: Command(resume=回答)，在后台任务里从 await_answer 的 interrupt 处恢复
+    G->>DB: 读检查点，记下这次作答
+    G->>L: assess：判断回答完整度，抽出回答里关于代码的说法
+    G->>S: verify_with_code：find_symbol / grep / read_file 核对说法（每轮最多 5 次）
+    G-->>U: SSE tool 事件："面试官正在查看 某文件"（图发出的事件都经 api 转成 SSE）
+    G->>G: decide：有缺口且没到追问深度上限吗？
+    alt 有缺口：追问
+        G->>L: follow_up 生成追问
+        G->>G: 防泄露检查：和参考答案要点重合太多就重写
+        G-->>U: SSE 分块推送追问
+        G->>DB: 停在 await_answer，检查点落库，等下一次作答
+    else 本题结束：阅卷
+        G->>W: close_question 投递 grade 任务（经 Redis）
+        W->>L: 阅卷官逐要点判分，分数在及格线附近时再判 2 次取多数
+        W->>DB: 写入 gradings
+        G->>L: 还有题就 ask 下一题（真流式）；题量用完就 finish 并投递 report 任务
+        G-->>U: SSE next_question + 题目，或 session_finished
+    end
+    A-->>U: SSE done（当前第几题、追问深度、提示级别）
+```
+
+追问先完整生成、过了防泄露检查再切块推送，所以看起来是流式，实际首字要等整段生成完（[D-004](docs/decisions.md)）。检查点存在 Postgres 里，刷新页面或重启 api 后能从上一次停下的地方接着答（[D-006](docs/decisions.md)）。
 
 ## 快速开始（Docker）
 
@@ -77,6 +154,7 @@ claude mcp add codeproof \
   -- uv run --directory /path/to/codeproof/backend python -m app.mcp_server
 ```
 
+   用线上服务时，`PB_API_URL` 填 `https://exam.fufu235.top/api`，令牌在线上的「设置」页生成。
 3. 在 Claude Code 里说："用 CodeProof 分析 https://github.com/spring-projects/spring-petclinic ，然后考我 3 道题"。
 
 可用工具：`list_repos`、`analyze_repo`、`start_session`、`answer`、`hint`、`get_report`。
@@ -105,25 +183,24 @@ docs/             SPEC、设计决策、踩坑记录、学习文档、评测报�
 
 | 里程碑 | 状态 | 说明 |
 | --- | --- | --- |
-| M0 骨架 | ✅ 代码完成 | GitHub OAuth 已实现，但还没配置 OAuth App，未用真实 GitHub 账号验证；CI 已写好，尚未在 GitHub 上运行 |
-| M1 仓库分析 | ✅ | petclinic、技术派都能分析完成（假模型出题）；画像需要你人工抽查 |
+| M0 骨架 | ✅ | CI 已通过，线上已用 GitHub 登录 |
+| M1 仓库分析 | ✅ | petclinic、技术派都能分析完成（假模型出题）；画像的人工抽查还没做 |
 | M2 出题与阅卷 | ✅ | 证据行号可点开高亮；真实模型下的出题质量待验证 |
 | M3 追问循环 | ✅ | interrupt + AsyncPostgresSaver，重启后续答有测试 |
 | M4 简历/掌握度/知识库/模式 | ✅ | 四种模式可用 |
 | M5 工程化 | ✅ | 增量分析、降级重试、限流配额、运维页、注入防护 |
-| M6 评测 | ⚠️ 部分 | 运行器、指标、对比、报告、CI 小样本都已完成；**缺**：用真实模型跑出的报告、petclinic 和技术派各 20 题的人工标注数据集 |
-| M7 泛化 | ⚠️ 部分 | 改动理解（提交范围 + 公开 PR）、MCP、API 令牌已完成；**未做**：GitHub App 私有仓库、Python 仓库支持（可选） |
+| M6 评测 | ⚠️ 部分 | 运行器、指标、对比、报告、CI 小样本都已完成；**缺**：用真实模型（DeepSeek）跑出的完整报告，以及 spring-petclinic 和 [code-nest](https://github.com/qq3939/code-nest) 各 20 题的人工标注评测集。技术派只用来测分析耗时和成本，不做标注 |
+| M7 泛化 | ⚠️ 部分 | 改动理解（提交范围 + 公开 PR）、MCP、API 令牌已完成；**缺**：在 Claude Code 里通过 MCP 实际走一遍。GitHub App 接入私有仓库已搁置，Python 仓库支持不做 |
 
 ## 还需要你提供或确认的
 
-- GitHub OAuth App 的 Client ID / Secret（M0 完成标准"用 GitHub 账号登录"）。
-- 管理员的 GitHub 登录名（`ADMIN_GITHUB_LOGINS`）。
-- 模型服务的地址、Key 和模型名（M6 真实评测报告）。
-- 私有仓库需要的 GitHub App（M7）。
-- 评测集的人工标注：petclinic 和技术派各至少 20 题的标准答案和阅卷标注。
+- 嵌入模型的选择：选定后才能定 `EMBEDDING_DIM`，线上的知识库和向量检索才能用。
+- 仓库画像的人工抽查（M1 完成标准）。
+- 评测集的审题和人工标注：spring-petclinic 和 code-nest 各 20 题，题目和回答由 AI 起草。
 
 ## 文档
 
+- [docs/ROADMAP.md](docs/ROADMAP.md)：现状、已定决策和后续任务
 - [docs/deploy.md](docs/deploy.md)：部署到云服务器
 - [docs/decisions.md](docs/decisions.md)：设计决策
 - [docs/pitfalls.md](docs/pitfalls.md)：踩坑记录
