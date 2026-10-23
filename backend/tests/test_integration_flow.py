@@ -73,6 +73,14 @@ async def test_full_session_flow(user_client: httpx.AsyncClient, analyzed: dict[
     session_id = data["session"]["id"]
     assert data["turns"][0]["role"] == "examiner" and data["state"]["awaiting_answer"]
     assert any(e["event"] == "next_question" for e in data["events"])
+    # 项目深挖只考设计和风险两类（D-019）：夹具里机制题有十几道，但这两类够 3 道，不应该混进来
+    from app.core.db import session_scope
+    from app.models import ExamSession
+
+    async with session_scope() as db:
+        sess_row = await db.get(ExamSession, __import__("uuid").UUID(session_id))
+        assert sess_row is not None
+        assert {p["kind"] for p in sess_row.config["plan"]} <= {"design", "risk"}
 
     # 1) 不完整的回答 → 追问；回答里提到不存在的类 → 面试官去查代码
     ev = await post_stream(user_client, f"/api/sessions/{session_id}/answer", {"text": "我觉得是用 FooBarManager 做的"})
@@ -90,7 +98,6 @@ async def test_full_session_flow(user_client: httpx.AsyncClient, analyzed: dict[
     assert next(d for e, d in ev if e == "hint")["level"] == 2
 
     # 3) 用答案要点里的关键词作答 → 判为完整 → 下一题
-    from app.core.db import session_scope
     from app.models import Question
 
     qid = ev[-1][1]["question_id"]

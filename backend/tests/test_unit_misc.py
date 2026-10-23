@@ -190,3 +190,20 @@ async def test_embed_requires_configured_model() -> None:
 def test_embedding_dim_limit() -> None:
     with pytest.raises(ValidationError):
         Settings(_env_file=None, embedding_dim=4096)  # type: ignore[call-arg]
+
+
+def test_pick_deep_dive_only_design_and_risk() -> None:
+    from app.sessions.planner import pick_deep_dive
+
+    def item(key: str, kind: str) -> dict:
+        return {"question_id": key, "topic_key": key, "kind": kind, "importance": 3, "difficulty": "medium"}
+
+    # 设计和风险够题量：机制题、链路题一道都不选（D-019）
+    items = [item(f"m{i}", "mechanism") for i in range(10)] + [item("c", "chain")]
+    items += [item("d1", "design"), item("d2", "design"), item("r1", "risk")]
+    assert {i["kind"] for i in pick_deep_dive(items, 3, {}, "medium")} == {"design", "risk"}
+    # 不够时才用其他类型补齐，设计和风险排在前面
+    few = [item("d1", "design")] + [item(f"m{i}", "mechanism") for i in range(5)]
+    chosen = pick_deep_dive(few, 3, {}, "medium")
+    assert len(chosen) == 3 and chosen[0]["kind"] == "design"
+    assert [i["kind"] for i in chosen[1:]] == ["mechanism", "mechanism"]

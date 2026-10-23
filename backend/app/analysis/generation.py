@@ -15,11 +15,14 @@ from app.tools.sandbox import Sandbox
 
 logger = logging.getLogger(__name__)
 
+# 项目深挖只从这两类考点出题（SPEC 3.2、D-019）：链路题留给"链路学习"，机制题留给"八股联系项目"
+DEEP_DIVE_KINDS = ("design", "risk")
+
 TOPIC_SYSTEM = """你是资深 Java 面试官，正在为一个仓库挑选考点。
 输入是确定性分析得出的候选考点（每个都带真实代码证据）和仓库画像摘要。
 任务：
 1. 从候选中挑出最值得考的点，可以改写标题和说明，让它像真实面试会问的问题方向；
-2. 可以补充"设计决策"类考点，但证据必须来自给出的片段，行号必须真实；
+2. 设计决策（design）和风险点（risk）类考点尽量保留，项目深挖只从这两类出题；也可以补充新的设计决策类考点，但证据必须来自给出的片段，行号必须真实；
 3. 每个考点给出类型（design 设计决策 / risk 风险点 / chain 链路 / mechanism 机制）、重要度 1-5、topic_key；
 4. topic_key 尽量沿用候选里的值，便于跨版本追踪掌握度；
 5. identifiers 填证据片段里真实出现的类名或方法名。"""
@@ -31,6 +34,14 @@ QUESTION_SYSTEM = """你是资深 Java 面试官，根据一个考点和它的�
 - keywords 填答对该要点时通常会提到的词（类名、方法名、关键概念）；
 - followup_hints 是追问方向，不能直接包含答案；
 - reference_md 是给考生复习用的参考讲解。"""
+
+# v1 只有上面的通用要求，题干常常直接点名类和方法、问"这段代码做了什么"，像在考代码阅读而不是面试（D-019）。
+# 题干和答案要点分开对待：题干用面试官的问法，答案要点仍然落到具体代码行，阅卷靠它核对
+DEEP_DIVE_STYLE = """这是项目深挖模式，题干要像面试官当面问候选人：
+- 从设计意图、取舍、替代方案、故障和边界情况、数据量或并发上来以后怎么办这些角度问，例如"这个计数为什么先写缓存、再定时写回数据库？缓存宕机会丢什么？"；
+- 题干里不要出现类名、方法名、文件名和行号，也不要问"这段代码做了什么"；用业务功能指代代码（如"点赞计数""下单流程"），让候选人自己说出落在哪部分代码、怎么实现的；
+- 答案要点照常写到具体实现并带证据行号，keywords 照常填类名、方法名：阅卷要靠它们核对候选人说的和代码是否一致；
+- followup_hints 往具体实现上追问（落在哪个类、哪段逻辑、为什么这样写）。"""
 
 
 def _snippet_block(sandbox: Sandbox, evs: list[dict[str, Any]], limit_chars: int) -> tuple[str, list[dict[str, Any]]]:
@@ -150,9 +161,10 @@ async def generate_questions(
     kb_text = "\n\n".join(
         f"[{k.get('title')} / {k.get('heading_path')}]\n{k.get('content', '')[:800]}" for k in (kb or [])
     )
+    style = DEEP_DIVE_STYLE if mode == "deep_dive" else ""
     user = (
         f"考点：[{topic['kind']}] {topic['title']}\n说明：{topic.get('description', '')}\n"
-        f"模式：{mode}，难度：{difficulty}，出 {count} 道题。\n{extra_context}\n\n"
+        f"模式：{mode}，难度：{difficulty}，出 {count} 道题。\n{style}\n{extra_context}\n\n"
         f"{wrap_data('code', snippet_text)}"
         + (f"\n\n{wrap_data('knowledge_base', kb_text)}\n八股部分要和上面的代码事实联系起来。" if kb_text else "")
     )

@@ -18,7 +18,7 @@
 - **备选**：Redis 分布式锁（`SET NX` + 过期时间）。要处理锁过期、持锁进程崩溃、锁和数据库状态不一致等问题。
 - **为什么选它**：数据库唯一约束是"最终裁判"，即使锁失效也不可能插入两行；而且代码更少，不需要额外的锁服务。
 - **代价与风险**：快照建好但任务投递失败时，会留下一个 `queued` 的快照，需要靠运维页"重试"处理。
-- **相关代码**：`backend/app/repos/service.py:54`、`backend/app/models.py:91`、测试 `backend/tests/test_integration_flow.py:170`
+- **相关代码**：`backend/app/repos/service.py:54`、`backend/app/models.py:91`、测试 `backend/tests/test_integration_flow.py:177`
 
 ## D-002 调用关系用"近似解析"，不做完整的 Java 类型推导
 
@@ -63,7 +63,7 @@
 - **备选**：在请求协程里直接 `astream`（简单但会被取消）；全部交给 worker（延迟大，流式推送要再绕一圈 Redis）。
 - **为什么选它**：节点要么完整执行要么没开始，检查点一致；连点两次"发送"也不会让图并发推进。
 - **代价与风险**：api 进程崩溃时后台任务也会丢，但检查点在 Postgres 里，重启后从上一个中断点继续（有测试）。
-- **相关代码**：`backend/app/sessions/service.py:137`、测试 `backend/tests/test_integration_flow.py:134`
+- **相关代码**：`backend/app/sessions/service.py:137`、测试 `backend/tests/test_integration_flow.py:141`
 
 ## D-007 自建 jobs 表记录后台任务，arq 只负责投递
 
@@ -81,7 +81,7 @@
 - **备选**：只按文件路径 + 修改时间判断（git 检出后修改时间不可靠）；每次全量重做（简单但贵）。
 - **为什么选它**：内容哈希天然正确；`topic_key` 让"同一个考点"跨快照可识别，掌握度也依赖它。
 - **代价与风险**：考点证据之外的文件改了也可能影响考点（例如被调用方改了），这种情况会被错误复用。
-- **相关代码**：`backend/app/analysis/pipeline.py:101`、`backend/app/analysis/pipeline.py:303`、测试 `backend/tests/test_integration_flow.py:213`
+- **相关代码**：`backend/app/analysis/pipeline.py:101`、`backend/app/analysis/pipeline.py:303`、测试 `backend/tests/test_integration_flow.py:220`
 
 ## D-009 限流用 Redis 固定窗口
 
@@ -187,3 +187,24 @@
 - **为什么选它**：同系列模型在中文（C-MTEB）和代码检索（MTEB-Code）上的公开成绩都高；有官方的 OpenAI 兼容文档，参数和限制写得清楚；国内付款方便，每百万 token 0.5 元。1024 是 v4 的默认维度，低于 pgvector HNSW 索引 2000 维的上限；线上还没有真实用户，正好清库。
 - **代价与风险**：多一家服务商、多一个 Key；阿里云没说 v4 对应 Qwen3-Embedding 的哪个尺寸，评测报告里引用公开分数时只能当参考；批大小 10 意味着同样的文本要发更多次请求（量很小，影响可以忽略）；这些参数在 2026-10-23 线上清库重建后实测过：知识库上传笔记、检索测试都正常。
 - **相关代码**：`backend/app/llm/providers.py:183`（`embed`）、`backend/app/llm/client.py:276`（分批和维度校验）、`backend/app/core/config.py:64`；测试 `backend/tests/test_unit_misc.py`（`test_embed_*`）；部署步骤见 `docs/deploy.md` 第 9 步
+
+## D-019 项目深挖：只考设计和风险，题干用面试官的问法
+
+- **背景**：2026-10-23 第一次真实使用（ROADMAP B0-6），用户在线上用"项目深挖"考 code-nest，反馈题目"太具体、偏向代码实现，和真实面试题不符"。查下来有两个原因：
+  1. 选题范围偏了。SPEC 3.2 规定项目深挖的出题依据是"设计决策点和风险点"，但 v1 的出题计划从整个题库里挑，不分考点类型；而题库按重要度取前 20 个考点，候选里机制类最多（测试夹具里机制 12 个、链路 3 个、设计 3 个、风险 1 个），抽出来多是"某个类里的事务怎么用""某个接口的调用链路"。
+  2. 题干问法偏了。出题提示词要求每个答案要点带文件和行号、关键词填类名方法名，模型为了让答案对得上代码，题干也直接点名类和方法，问"这段代码做了什么"，像代码阅读题。
+- **方案**：
+  1. 项目深挖只从设计（design）和风险（risk）两类考点选题，这两类凑不够题量时才用其他类型补齐；生成题库时这两类先出题，考点生成的提示词也要求尽量保留这两类。
+  2. 项目深挖出题时额外加一段问法要求：题干从设计意图、取舍、替代方案、故障和边界、数据量上来以后怎么办这些角度问，不出现类名、方法名、文件名和行号，用业务功能指代代码；答案要点照常落到具体代码行并带证据，追问方向往具体实现上钻。
+- **备选**：
+  - 只改问法、不改选题：机制题换个问法还是在考"某个机制怎么用"，那是"八股联系项目"模式的事。
+  - 题干和答案要点都去掉代码细节：阅卷就没法对照代码判分，丢了"以代码为证据"这个核心。
+  - 另开一个"面试题"模式、保留原来的深挖：模式变多，而 SPEC 里的项目深挖本来就该是这样。
+  - 严格只出这两类、不够就报错：小仓库开不了考，测试夹具里这两类一共只有 4 个考点。
+- **为什么选它**：选题回到 SPEC 的定义；题干和答案要点分开对待，题干像真实面试，答案要点仍然能对照代码判分。先问设计、再往实现上追问，也是真实面试的节奏。
+- **代价与风险**：
+  - 题干不点名代码，考生可能讲到别处去，要靠追问和面试官当场查代码（`verify_with_code`）拉回来；
+  - 小仓库补题时仍会混进机制题；
+  - 题库在分析时生成：线上已经分析好的快照，部署后选题范围马上生效，但题干还是旧问法，要重新分析才会换；增量分析会复用没改动的考点和题目，旧问法会一直沿用到这些考点的代码改动为止；
+  - 新问法还没用真实模型验证过，修改前后的题目对比等线上重新分析后补上。
+- **相关代码**：`backend/app/analysis/generation.py:19`（`DEEP_DIVE_KINDS`）、`:40`（`DEEP_DIVE_STYLE`）、`backend/app/sessions/planner.py:184`（`pick_deep_dive`）、`backend/app/analysis/pipeline.py:414`（题库出题顺序）；测试 `backend/tests/test_unit_misc.py`（`test_pick_deep_dive_only_design_and_risk`）、`backend/tests/test_integration_flow.py`（`test_full_session_flow` 里检查出题计划的考点类型）

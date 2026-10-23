@@ -26,7 +26,7 @@ from sqlalchemy import delete, insert, select
 
 from app.analysis.candidates import build_candidates
 from app.analysis.code_model import CodeModel, FileEntry
-from app.analysis.generation import generate_questions, generate_topics
+from app.analysis.generation import DEEP_DIVE_KINDS, generate_questions, generate_topics
 from app.analysis.java_index import Annotation, Call, JavaFileIndex, Symbol, parse_java
 from app.analysis.spring_profile import TextFile, build_profile, profile_summary_md
 from app.core.config import get_settings
@@ -409,8 +409,9 @@ async def _generate(
             topic_rows.append((row, t))
         await db.commit()
     stats["topics"] = len(topic_rows) + stats["topics_reused"]
-    # 题库：按重要度取前 N 个考点出题
-    topic_rows.sort(key=lambda x: -x[1]["importance"])
+    # 题库：设计和风险类考点先出题（项目深挖只考这两类，D-019），其余按重要度补到上限，
+    # 留给这两类凑不够题量的小仓库兜底
+    topic_rows.sort(key=lambda x: (x[1]["kind"] not in DEEP_DIVE_KINDS, -x[1]["importance"]))
     n_q = 0
     for i, (row, t) in enumerate(topic_rows[: max(0, MAX_TOPICS_WITH_QUESTIONS - stats["topics_reused"])]):
         qs, q_tokens, model_name = await generate_questions(

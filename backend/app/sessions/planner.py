@@ -12,7 +12,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.analysis.generation import generate_questions
+from app.analysis.generation import DEEP_DIVE_KINDS, generate_questions
 from app.core.db import session_scope
 from app.core.errors import AppError
 from app.llm.types import CallContext
@@ -20,6 +20,7 @@ from app.mastery import service as mastery
 from app.models import (
     ClaimVerification,
     ExamSession,
+    Mastery,
     Question,
     RepoProfile,
     RepoSnapshot,
@@ -61,7 +62,7 @@ async def build_plan(sess: ExamSession) -> list[dict[str, Any]]:
             ]
             if not items:
                 raise AppError("这个快照还没有题库，请等分析完成", code="no_questions")
-            return mastery.pick(items, n, ms, sess.difficulty)
+            return pick_deep_dive(items, n, ms, sess.difficulty)
         if sess.mode == "kb_link":
             topics = (
                 (
@@ -178,6 +179,22 @@ async def build_plan(sess: ExamSession) -> list[dict[str, Any]]:
             topics = (sess.config or {}).get("change_topics", [])
             return [{"gen": t, "topic_key": t["topic_key"], "kind": "change", "title": t["title"]} for t in topics[:n]]
     raise AppError(f"未知模式 {sess.mode}")
+
+
+def pick_deep_dive(
+    items: list[dict[str, Any]], n: int, ms: dict[str, Mastery], difficulty: str
+) -> list[dict[str, Any]]:
+    """项目深挖只考设计决策和风险点（SPEC 3.2、D-019）。
+
+    v1 从整个题库里挑，题库又被机制题和链路题占了大半，考出来像代码阅读题。
+    这两类凑不够题量时（小仓库常见）才用其他类型的题补齐，免得开不了考。
+    """
+    primary = [i for i in items if i["kind"] in DEEP_DIVE_KINDS]
+    chosen = mastery.pick(primary, n, ms, difficulty)
+    if len(chosen) < n:
+        rest = [i for i in items if i["kind"] not in DEEP_DIVE_KINDS]
+        chosen += mastery.pick(rest, n - len(chosen), ms, difficulty)
+    return chosen
 
 
 def _topic_dict(t: Topic) -> dict[str, Any]:

@@ -70,6 +70,7 @@ SPEC 里程碑中还没达到完成标准的部分：
 - [x] **B0-5（AI，用户在旁看结果）在 Windows 本机跑通**（`30eca2e`、`b584223`）：`docker compose up -d --build`，所有服务 healthy；`cd backend && uv sync && uv run pytest -q`；`uv run ruff check . && uv run mypy`；`cd frontend && npm run build`。遇到的 Windows 特有问题记进 `pitfalls.md`。
   - 2026-10-23 记录：没装 Docker 时先跑了不依赖 Docker 的部分，`uv sync`、`ruff check`、`ruff format --check`、`mypy`、`npm run build` 通过；单元测试（`tests/test_unit_*.py`）修了两个 Windows 问题后 21 个通过、1 个按设计跳过（建符号链接要管理员权限），见 P-011、P-012（`30eca2e`）。装好 Docker 后：第一次 `docker compose up` 时 api 在全新数据库上建检查点表死锁（P-013，不是 Windows 特有，线上清库后也会遇到）；集成测试又遇到 psycopg 不支持 Windows 默认事件循环（P-014）和 alembic 按 GBK 读配置（P-015）。都修完后，用全新数据卷 `docker compose up -d --build` 五个常驻服务全部 healthy、migrate 正常退出、api 和 worker 零重启，完整 `uv run pytest -q` 41 个通过、1 个跳过。
 - [ ] **B0-6（用户）线上第一次真实使用**：用 GitHub 登录，提交 https://github.com/qq3939/code-nest ，分析完成后考一场 3 题的"项目深挖"，看报告。AI 根据结果新建 `docs/usage.md`（格式见第 4 节），记下第一条。
+  - 10-23：用户已在线上考了一场项目深挖，反馈题目"太具体、偏向代码实现，不像真实面试题"，按 D-019 修改了选题范围和题干问法。**还差**：用户提供这场的日期、得分和费用，AI 建 `usage.md`；部署后重新分析 code-nest，补修改前后的题目对比。
 - [x] **B0-7（用户决定）** 本地的 `backup/before-remove-coauthor` 分支要不要删（10-23 用户决定删除，已删；原指向 `2af847e`，只在本地，远程没有）。GitHub 仓库已改名为 https://github.com/qq3939/CodeProof ，旧地址 `qq3939/project_b` 会自动重定向。
 
 ### 阶段 1：用本项目考自己（2026-11-02 至 2027-01-10）
@@ -80,6 +81,7 @@ SPEC 里程碑中还没达到完成标准的部分：
   - 用"链路学习"模式选那一周读的接口，或者用"项目深挖"；
   - 每场之后把日期、模式、题数、得分、费用和发现的问题告诉 AI，由 AI 记进 `usage.md`。
 - [ ] **B1-2（AI）修复使用中发现的问题**：每个问题单独提交；记进 `pitfalls.md`；属于设计取舍的（比如追问太浅、提示泄露答案、选题重复）写成 decision，写清 v1 和 v2 的差别，最好附修改前后的数据。
+  - 10-23：项目深挖题目偏具体实现 → D-019（只考设计和风险，题干用面试官问法）。
 - [ ] **B1-3（用户）在 Claude Code 里通过 MCP 走一遍**：在网页"设置"页生成令牌，按 README"在 Claude Code 里使用（MCP）"注册，走完"分析仓库 → 考核 → 看报告"。这一项完成后，M7 的完成标准才算真正达到。
 - [ ] **B1-4（用户）每月看一次运维页的费用统计**，AI 把月度费用汇总进 `usage.md`。全年预算 300–800 元，其中还包括服务器和域名的费用。
 
