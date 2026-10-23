@@ -65,7 +65,8 @@ def make_repo(name: str = "mini-feed") -> Path:
 
 def commit_change(repo: Path, rel: str, old: str, new: str, msg: str = "change") -> str:
     p = repo / rel
-    p.write_text(p.read_text().replace(old, new))
+    # 夹具是 UTF-8 的中文注释，Windows 默认按 GBK 读会解码失败
+    p.write_text(p.read_text(encoding="utf-8").replace(old, new), encoding="utf-8")
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", msg)
     return _git(repo, "rev-parse", "HEAD")

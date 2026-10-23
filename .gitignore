@@ -31,3 +31,6 @@ eval/.cache/
 # 测试夹具里故意放的"敏感文件"，用来测沙箱拒绝读取
 !backend/tests/fixtures/**/.env
 /dist-deploy/
+
+# IDE 的 Java 插件会自动编译测试夹具，产物不提交（分析时也会跳过 target/）
+backend/tests/fixtures/**/target/

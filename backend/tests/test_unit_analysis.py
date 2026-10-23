@@ -21,8 +21,10 @@ FIX = Path(__file__).parent / "fixtures" / "mini-feed"
 def _model() -> tuple[CodeModel, dict[str, str]]:
     files, src = [], {}
     for p in sorted(FIX.rglob("*.java")):
-        rel = str(p.relative_to(FIX))
-        src[rel] = p.read_text()
+        # as_posix：Windows 上 str() 得到的是反斜杠路径，和分析流水线里统一用的 "/" 对不上
+        rel = p.relative_to(FIX).as_posix()
+        # 显式 utf-8：夹具里有中文注释，Windows 默认按 GBK 读会解码失败
+        src[rel] = p.read_text(encoding="utf-8")
         files.append(FileEntry(id=uuid.uuid4(), path=rel, index=parse_java(p.read_bytes())))
     return CodeModel(files), src
 
@@ -31,8 +33,13 @@ def _profile() -> tuple[CodeModel, dict]:
     m, src = _model()
     prof = build_profile(
         m,
-        [TextFile("pom.xml", (FIX / "pom.xml").read_text())],
-        [TextFile("src/main/resources/application.yml", (FIX / "src/main/resources/application.yml").read_text())],
+        [TextFile("pom.xml", (FIX / "pom.xml").read_text(encoding="utf-8"))],
+        [
+            TextFile(
+                "src/main/resources/application.yml",
+                (FIX / "src/main/resources/application.yml").read_text(encoding="utf-8"),
+            )
+        ],
         src,
         {"java": len(src)},
     )
@@ -96,7 +103,8 @@ def test_profile_endpoints_usages_chains() -> None:
 
 
 def test_config_values_redacted() -> None:
-    keys = parse_config_keys([TextFile("application.yml", (FIX / "src/main/resources/application.yml").read_text())])
+    yml = (FIX / "src/main/resources/application.yml").read_text(encoding="utf-8")
+    keys = parse_config_keys([TextFile("application.yml", yml)])
     assert {"key": "spring.datasource.password", "value": "***"}.items() <= next(
         k for k in keys if k["key"] == "spring.datasource.password"
     ).items()

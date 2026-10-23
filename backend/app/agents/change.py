@@ -206,7 +206,8 @@ async def _change_topics(
     if biggest:
         f = biggest[0]
         h = f.hunks[0]
-        n_lines = len((work / f.path).read_text(errors="replace").splitlines()) if (work / f.path).exists() else 1
+        p = work / f.path
+        n_lines = len(p.read_text(encoding="utf-8", errors="replace").splitlines()) if p.exists() else 1
         topics.append(
             {
                 "kind": "change",

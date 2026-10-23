@@ -26,7 +26,6 @@ def sandbox(tmp_path: Path) -> Sandbox:
     (root / ".env").write_text("SECRET=abc")
     (root / "key.pem").write_text("-----BEGIN")
     (tmp_path / "outside.txt").write_text("outside secret")
-    os.symlink(tmp_path / "outside.txt", root / "link.txt")
     (root / "sub").mkdir()
     return Sandbox(root)
 
@@ -34,8 +33,17 @@ def sandbox(tmp_path: Path) -> Sandbox:
 async def test_sandbox_path_traversal(sandbox: Sandbox) -> None:
     assert "拒绝" in await sandbox.call("read_file", {"path": "../outside.txt"})
     assert "拒绝" in await sandbox.call("read_file", {"path": "/etc/passwd"})
-    assert "拒绝" in await sandbox.call("read_file", {"path": "link.txt"})  # 符号链接指向根目录外
     assert "拒绝" in await sandbox.call("list_dir", {"path": "sub/../.."})
+
+
+async def test_sandbox_symlink_escape(sandbox: Sandbox, tmp_path: Path) -> None:
+    # 单独成一个测试：Windows 没开"开发者模式"时普通用户不能建符号链接（WinError 1314），
+    # 放在夹具里会连累上面几条测试一起报错。生产环境和 CI 都是 Linux，这条照常执行
+    try:
+        os.symlink(tmp_path / "outside.txt", tmp_path / "repo" / "link.txt")
+    except OSError as e:
+        pytest.skip(f"当前系统不能创建符号链接：{e}")
+    assert "拒绝" in await sandbox.call("read_file", {"path": "link.txt"})  # 符号链接指向根目录外
 
 
 async def test_sandbox_sensitive_files(sandbox: Sandbox) -> None:

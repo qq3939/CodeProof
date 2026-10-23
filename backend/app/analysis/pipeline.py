@@ -105,7 +105,8 @@ def parse_cached(content: bytes, content_hash: str) -> tuple[JavaFileIndex, bool
     fp = _cache_dir() / f"{content_hash}.json"
     if fp.exists():
         try:
-            idx = _index_from_json(json.loads(fp.read_text()))
+            # 显式 utf-8：Windows 上默认编码是 GBK，写入时遇到 GBK 表示不了的字符会直接抛错
+            idx = _index_from_json(json.loads(fp.read_text(encoding="utf-8")))
             _parse_cache[content_hash] = idx
             return idx, True
         except Exception:  # noqa: BLE001 —— 缓存坏了就重新解析
@@ -113,7 +114,7 @@ def parse_cached(content: bytes, content_hash: str) -> tuple[JavaFileIndex, bool
     idx = parse_java(content)
     try:
         fp.parent.mkdir(parents=True, exist_ok=True)
-        fp.write_text(json.dumps(dataclasses.asdict(idx), ensure_ascii=False))
+        fp.write_text(json.dumps(dataclasses.asdict(idx), ensure_ascii=False), encoding="utf-8")
     except OSError:
         pass
     if len(_parse_cache) > 20000:

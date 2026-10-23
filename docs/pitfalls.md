@@ -89,3 +89,19 @@
 - **解决**：加 `--no-audit --no-fund`（Dockerfile 和 CI 里都这样用）。
 - **教训**：受限网络里，工具的"附加功能"往往是卡住的原因。
 - **相关提交**：Docker Compose 提交
+
+## P-011 Windows 上读夹具报 `'gbk' codec can't decode`
+
+- **现象**：在 Windows 本机跑 `uv run pytest tests/test_unit_analysis.py`，4 个测试报 `UnicodeDecodeError: 'gbk' codec can't decode byte 0xa1`；CI（Linux）上一直是通过的。
+- **原因**：`Path.read_text()` / `write_text()` 不写 `encoding` 时用系统默认编码，Linux 是 UTF-8，简体中文 Windows 是 GBK。夹具 Java 文件里有 UTF-8 的中文注释，按 GBK 解码就失败。业务代码里也有同样的写法：解析缓存 `pipeline.py` 用 `ensure_ascii=False` 写 JSON，在 Windows 上会按 GBK 写，遇到 GBK 表示不了的字符（比如 emoji）直接抛错，而外面只捕获了 `OSError`，整个分析任务会失败。同一次还发现测试里用 `str(p.relative_to(FIX))` 拼路径，Windows 上得到的是反斜杠，和流水线统一用的 `/` 对不上。
+- **解决**：所有文本读写都显式写 `encoding="utf-8"`；测试里的相对路径改用 `.as_posix()`。子进程输出用的是 `bytes.decode()`，默认就是 UTF-8，不受影响。
+- **教训**：只在 Linux 上跑过的代码，换到 Windows 首先查编码和路径分隔符。可以用 `rg -n "read_text\(|write_text\(|open\(" | rg -v encoding` 把没写编码的地方一次找全。
+- **相关提交**：`修复：Windows 本机的文件编码和符号链接测试问题`
+
+## P-012 Windows 上建符号链接报 `WinError 1314`
+
+- **现象**：Windows 本机跑沙箱测试，3 个测试在夹具阶段报 `OSError: [WinError 1314] 客户端没有所需的特权`。
+- **原因**：夹具里用 `os.symlink` 造了一个指向根目录外的符号链接，用来测沙箱拒绝读取。Windows 默认只有管理员或开了"开发者模式"的用户才能创建符号链接。符号链接放在三条测试共用的夹具里，所以三条一起报错，连路径穿越、敏感文件这些和符号链接无关的检查也跑不了。
+- **解决**：符号链接单独拆成 `test_sandbox_symlink_escape`，建不了就 `pytest.skip` 并写明原因；其余三条测试不再依赖它。生产环境和 CI 都是 Linux，这条在那里照常执行。
+- **教训**：依赖平台能力的准备步骤不要放进共用夹具，否则一个前提不满足会连带其他测试一起失败；跳过时把原因写进 skip 信息，`pytest -rs` 能看到。
+- **相关提交**：`修复：Windows 本机的文件编码和符号链接测试问题`
