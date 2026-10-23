@@ -70,7 +70,7 @@ SPEC 里程碑中还没达到完成标准的部分：
 - [x] **B0-5（AI，用户在旁看结果）在 Windows 本机跑通**（`30eca2e`、`b584223`）：`docker compose up -d --build`，所有服务 healthy；`cd backend && uv sync && uv run pytest -q`；`uv run ruff check . && uv run mypy`；`cd frontend && npm run build`。遇到的 Windows 特有问题记进 `pitfalls.md`。
   - 2026-10-23 记录：没装 Docker 时先跑了不依赖 Docker 的部分，`uv sync`、`ruff check`、`ruff format --check`、`mypy`、`npm run build` 通过；单元测试（`tests/test_unit_*.py`）修了两个 Windows 问题后 21 个通过、1 个按设计跳过（建符号链接要管理员权限），见 P-011、P-012（`30eca2e`）。装好 Docker 后：第一次 `docker compose up` 时 api 在全新数据库上建检查点表死锁（P-013，不是 Windows 特有，线上清库后也会遇到）；集成测试又遇到 psycopg 不支持 Windows 默认事件循环（P-014）和 alembic 按 GBK 读配置（P-015）。都修完后，用全新数据卷 `docker compose up -d --build` 五个常驻服务全部 healthy、migrate 正常退出、api 和 worker 零重启，完整 `uv run pytest -q` 41 个通过、1 个跳过。
 - [ ] **B0-6（用户）线上第一次真实使用**：用 GitHub 登录，提交 https://github.com/qq3939/code-nest ，分析完成后考一场 3 题的"项目深挖"，看报告。AI 根据结果新建 `docs/usage.md`（格式见第 4 节），记下第一条。
-- [ ] **B0-7（用户决定）** 本地的 `backup/before-remove-coauthor` 分支要不要删。GitHub 仓库已改名为 https://github.com/qq3939/CodeProof ，旧地址 `qq3939/project_b` 会自动重定向。
+- [x] **B0-7（用户决定）** 本地的 `backup/before-remove-coauthor` 分支要不要删（10-23 用户决定删除，已删；原指向 `2af847e`，只在本地，远程没有）。GitHub 仓库已改名为 https://github.com/qq3939/CodeProof ，旧地址 `qq3939/project_b` 会自动重定向。
 
 ### 阶段 1：用本项目考自己（2026-11-02 至 2027-01-10）
 
