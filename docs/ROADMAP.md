@@ -43,7 +43,7 @@ SPEC 里程碑中还没达到完成标准的部分：
 
 ## 2. 已定决策（2026-10-23）
 
-1. **评测仓库**：人工标注的评测集用 **spring-petclinic**（小型）和 **code-nest**（项目 A，中型，https://github.com/qq3939/project-a ）各 20 题；技术派只用来测分析耗时和成本，不做标注。原因：用户没读过技术派，标注不可靠；code-nest 是用户要读透的项目。这改动了 SPEC 15.1、15.2 和 M6。
+1. **评测仓库**：人工标注的评测集用 **spring-petclinic**（小型）和 **code-nest**（项目 A，中型，https://github.com/qq3939/code-nest ）各 20 题；技术派只用来测分析耗时和成本，不做标注。原因：用户没读过技术派，标注不可靠；code-nest 是用户要读透的项目。这改动了 SPEC 15.1、15.2 和 M6。
 2. **模型**：对话模型用 DeepSeek（线上已接）。嵌入模型还没选，在任务 B0-4 里做完对比再定；必须在请同学使用之前定下来，因为改 `EMBEDDING_DIM` 要清库。
 3. **GitHub App 接入私有仓库先搁置**，投递之后再议；**Python 仓库支持不做**。原因：用户自己用不上，面试价值低。这改动了 SPEC 的 M7。
 4. **提交历史不再改写**。被问到时如实说明"代码主要由 AI 生成，需求拆解、方案选择、测试、评测和排错是我做的"。
@@ -68,8 +68,8 @@ SPEC 里程碑中还没达到完成标准的部分：
   3. 定下 `EMBEDDING_DIM`。如果和现在的 256 不同，线上要清库重建：现在线上没有真实用户，正好是清库的时机；
   4. 用户按 `docs/deploy.md` 第 9 步更新线上配置，然后上传一篇笔记验证知识库可用。
 - [ ] **B0-5（AI，用户在旁看结果）在 Windows 本机跑通**：`docker compose up -d --build`，所有服务 healthy；`cd backend && uv sync && uv run pytest -q`；`uv run ruff check . && uv run mypy`；`cd frontend && npm run build`。遇到的 Windows 特有问题记进 `pitfalls.md`。
-- [ ] **B0-6（用户）线上第一次真实使用**：用 GitHub 登录，提交 https://github.com/qq3939/project-a ，分析完成后考一场 3 题的"项目深挖"，看报告。AI 根据结果新建 `docs/usage.md`（格式见第 4 节），记下第一条。
-- [ ] **B0-7（用户决定）** GitHub 仓库要不要从 `project_b` 改名为 `codeproof`；本地的 `backup/before-remove-coauthor` 分支要不要删。
+- [ ] **B0-6（用户）线上第一次真实使用**：用 GitHub 登录，提交 https://github.com/qq3939/code-nest ，分析完成后考一场 3 题的"项目深挖"，看报告。AI 根据结果新建 `docs/usage.md`（格式见第 4 节），记下第一条。
+- [ ] **B0-7（用户决定）** 本地的 `backup/before-remove-coauthor` 分支要不要删。GitHub 仓库已改名为 https://github.com/qq3939/CodeProof ，旧地址 `qq3939/project_b` 会自动重定向。
 
 ### 阶段 1：用本项目考自己（2026-11-02 至 2027-01-10）
 
