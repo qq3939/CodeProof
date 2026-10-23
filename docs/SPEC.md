@@ -39,7 +39,7 @@
   - 一个 OpenAI 兼容接口的对话模型服务，需要它的地址、Key、强模型名和快模型名；
   - 一个嵌入模型服务，需要地址、Key、模型名和向量维度。
   - 没拿到 Key 之前，用假模型（`LLM_PROVIDER=fake`）继续开发。
-- **GitHub App**（M7 才需要）：用于接入私有仓库，到时再教用户创建。
+- **GitHub App**：原计划 M7 用于接入私有仓库，已搁置，投递实习之后再议（D-017）。
 - **本机环境**：Python 3.12（用 uv 管理）、Node.js LTS、Git、Docker Desktop。
 
 ## 2. 定位
@@ -69,7 +69,7 @@ Claude Code、Cursor 这类工具是"你问它答"，这个项目反过来，是
 | 模块 | 功能 |
 |---|---|
 | 登录 | GitHub OAuth 登录；会话 Cookie 设为 HttpOnly；个人 API 令牌（给 MCP 用） |
-| 仓库 | 提交公开仓库地址，可指定分支、标签或提交 SHA；我的仓库列表；检测到新提交时做增量分析；M7 起通过 GitHub App 接入私有仓库 |
+| 仓库 | 提交公开仓库地址，可指定分支、标签或提交 SHA；我的仓库列表；检测到新提交时做增量分析。只支持公开仓库，通过 GitHub App 接入私有仓库已搁置（D-017） |
 | 仓库分析 | 后台任务，用 SSE 推送进度；浅克隆并限制仓库大小；tree-sitter 符号索引；仓库画像（能识别 Spring 的关键点）；关键链路；候选考点；同一仓库的同一版本只分析一次，多人共享结果 |
 | 代码浏览 | 文件树 + 只读代码查看，按证据行号高亮 |
 | 简历 | 上传文字版 PDF，或直接粘贴文本；抽出项目经历，拆成一条条可检查的说法；把每个项目对应到一个已分析的仓库 |
@@ -101,7 +101,7 @@ Claude Code、Cursor 这类工具是"你问它答"，这个项目反过来，是
 - 自动生成项目文档；
 - PR 审查；
 - 支付和付费功能；
-- Java 以外的语言（Python 支持放在 M7，可选）；
+- Java 以外的语言（原定 M7 可选的 Python 支持也不做，见 D-017）；
 - 扫描版 PDF 的 OCR。
 
 ## 4. 技术栈
@@ -504,7 +504,7 @@ LangGraph 检查点表由 `AsyncPostgresSaver.setup()` 创建。
 | 嵌入模型 | EMBEDDING_BASE_URL、EMBEDDING_API_KEY、EMBEDDING_MODEL、EMBEDDING_DIM |
 | 计费 | LLM_PRICE_TABLE（JSON，每个模型每百万输入、输出 Token 的价格） |
 | 仓库与配额 | REPO_STORAGE_DIR、MAX_REPO_MB、MAX_FILES、DAILY_TOKEN_QUOTA、RETRIEVAL_MODE |
-| GitHub App（M7） | GITHUB_APP_ID、GITHUB_APP_PRIVATE_KEY_PATH |
+| GitHub App（已搁置，D-017；变量先保留） | GITHUB_APP_ID、GITHUB_APP_PRIVATE_KEY_PATH |
 
 ### 13.2 Compose 服务和端口
 
@@ -562,18 +562,18 @@ LangGraph 检查点表由 `AsyncPostgresSaver.setup()` 创建。
 
 ### 15.1 评测仓库
 
-都固定到具体的提交：
-- spring-petclinic：小型；
-- 项目 A：中型，等项目 A 做完后加入；
-- 技术派 `springboot3&vue3` 分支：大型。
+都固定到具体的提交（D-016）：
+- spring-petclinic：小型，人工标注 20 题；
+- code-nest（项目 A，https://github.com/qq3939/code-nest ）：中型，人工标注 20 题；
+- 技术派 `springboot3&vue3` 分支：大型，只用来测分析的耗时和成本，不做标注。
 
 ### 15.2 数据集（`eval/datasets/<仓库>/`）
 
 | 文件 | 内容 |
 |---|---|
-| `questions.jsonl` | 人工挑选、修订过的题目，含标准答案要点和证据位置，每个仓库至少 20 题 |
+| `questions.jsonl` | 人工挑选、修订过的题目，含标准答案要点和证据位置，每个标注仓库 20 题。可以先由 AI 起草，再由用户逐题核对证据位置 |
 | `answers.jsonl` | 每题 3–5 个不同质量的回答：完整、部分、错误、与代码矛盾、不会。可以先让模型生成，再请用户确认 |
-| `labels.jsonl` | 人工对每个回答逐个要点的判定，以及总分 |
+| `labels.jsonl` | 用户对每个回答逐个要点的判定，以及总分 |
 | `claims.jsonl` | 针对这个仓库写的简历说法，真假各一半 |
 | `injection/` | 提示注入样本 |
 
@@ -700,7 +700,7 @@ LangGraph 检查点表由 `AsyncPostgresSaver.setup()` 创建。
 ### M6 评测
 
 **内容**
-- 评测集格式，以及首批数据：petclinic 和技术派各至少 20 题；
+- 评测集格式，以及首批数据：petclinic 和 code-nest 各 20 题（D-016）；
 - 评测运行器和各项指标；
 - 和基线、三种检索模式做对比；
 - 阅卷校准；
@@ -714,8 +714,8 @@ LangGraph 检查点表由 `AsyncPostgresSaver.setup()` 创建。
 **内容**
 - 改动理解模式：支持提交范围和公开 PR；
 - MCP Server 和个人 API 令牌；
-- 通过 GitHub App 接入私有仓库；
-- 可选：支持 Python 仓库（tree-sitter-python）。
+- ~~通过 GitHub App 接入私有仓库~~：已搁置，投递实习之后再议（D-017）；
+- ~~可选：支持 Python 仓库（tree-sitter-python）~~：不做（D-017）。
 
 **完成标准**
 - 在 Claude Code 里通过 MCP 完整走一遍"分析仓库 → 考核 → 看报告"；
