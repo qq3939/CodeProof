@@ -1,7 +1,7 @@
 # CodeProof 现状与后续计划
 
 > 给在任何环境（本机或云端）进入本项目的 Claude 会话读。M0–M5 已完成，M6、M7 部分完成，项目已经上线。现在的工作是：补上真实模型的评测和真实使用数据，让用户读懂项目，把它变成能写进简历的项目。
-> 制定于 2026-10-23；最后更新 2026-10-23。
+> 制定于 2026-10-23；最后更新 2026-10-23（B0-1、B0-2 完成，B0-4、B0-5 部分完成）。
 
 ## 0. 进入本项目先读
 
@@ -22,9 +22,9 @@
 
 | 能写进简历的条件 | 状态 |
 |---|---|
-| CI 通过；干净克隆能构建；本机（Windows）能跑测试 | CI 通过；用户本机还没装 Docker，从没在 Windows 上跑过测试 |
+| CI 通过；干净克隆能构建；本机（Windows）能跑测试 | CI 通过；Windows 上 ruff、mypy、前端构建和单元测试已跑通（10-23）；本机还没装 Docker，集成测试和 Compose 没跑过 |
 | 小步提交，不改写历史；没有临时文件和密钥 | 11 个提交，后端主体在一个提交里（`02766d1`）；历史改写过一次，不再改；`backend/tests/fixtures/mini-feed/.env` 是故意放的假值，用来测敏感文件拦截 |
-| README 写实情 | 里程碑状态表过时；缺架构图和线上地址 |
+| README 写实情 | 已更新：线上地址、架构图、作答时序图、里程碑状态（B0-1） |
 | 至少 3 条亮点有实测数据 | 只有假模型跑出的 small 套件（242 行夹具、6 题），指标没有参考意义 |
 | 能演示 | 有：线上可访问，已开 GitHub 登录，开发登录已关，对话模型已接 DeepSeek |
 | 有真实使用 | 无 |
@@ -55,19 +55,20 @@ SPEC 里程碑中还没达到完成标准的部分：
 
 ### 阶段 0：环境与收尾（2026-10-24 至 11-01）
 
-- [ ] **B0-1（AI）README 补实情**：
+- [x] **B0-1（AI）README 补实情**（`ff928ae`）：
   - 里程碑状态表（`README.md:104` 起）：M0 改成"CI 已通过，线上已用 GitHub 登录"；M6 的缺口改成 petclinic + code-nest；M7 写明 GitHub App 已搁置、Python 支持不做；
   - "还需要你提供或确认的"一节删掉已完成的项；
   - 加线上地址；
   - 加一张 Mermaid 架构图（浏览器 → Caddy / Nginx → api → Postgres、Redis → worker → 模型服务；MCP 客户端 → api），再加一张"作答 → 面试官图 → 查代码 → 追问或阅卷"的时序图。
-- [ ] **B0-2（AI）按第 2 节改 SPEC**：SPEC 15.1、15.2、M6 的评测仓库，M7 的 GitHub App 和 Python 支持；在 `docs/decisions.md` 里加 D-016（评测仓库）和 D-017（M7 的取舍），格式按已有条目。
+- [x] **B0-2（AI）按第 2 节改 SPEC**（`8117aca`）：SPEC 15.1、15.2、M6 的评测仓库，M7 的 GitHub App 和 Python 支持；在 `docs/decisions.md` 里加 D-016（评测仓库）和 D-017（M7 的取舍），格式按已有条目。
 - [ ] **B0-3（用户）核查线上嵌入配置**：登录服务器看 `.env` 里的 `EMBEDDING_MODEL`，或者直接在网页"知识库"上传一篇笔记，看会不会报错。把结果告诉 AI。
 - [ ] **B0-4（AI 对比，用户选）选嵌入模型并接到线上**：
-  1. 写一份对比，放在 `docs/eval/embedding-choice.md`：价格、支持的维度、中文和代码检索效果、是否兼容 OpenAI 接口、是否和 DeepSeek 共用一个 Key；
-  2. 用户选定后，把 `providers.py:189` 只对 `text-embedding-3` 传 `dimensions` 的写法改成可配置，加测试；
+  1. [x] 写一份对比，放在 `docs/eval/embedding-choice.md`：价格、支持的维度、中文和代码检索效果、是否兼容 OpenAI 接口、是否和 DeepSeek 共用一个 Key（`78a64ee`；推荐阿里云百炼 `text-embedding-v4`、1024 维，**等用户选**）；
+  2. 用户选定后，把 `providers.py:189` 只对 `text-embedding-3` 传 `dimensions` 的写法改成可配置，加测试；同时把 `client.py:281` 写死的批大小 64 改成可配置（阿里云单次最多 10 条、硅基流动 32 条），并固定 `encoding_format="float"`；
   3. 定下 `EMBEDDING_DIM`。如果和现在的 256 不同，线上要清库重建：现在线上没有真实用户，正好是清库的时机；
   4. 用户按 `docs/deploy.md` 第 9 步更新线上配置，然后上传一篇笔记验证知识库可用。
 - [ ] **B0-5（AI，用户在旁看结果）在 Windows 本机跑通**：`docker compose up -d --build`，所有服务 healthy；`cd backend && uv sync && uv run pytest -q`；`uv run ruff check . && uv run mypy`；`cd frontend && npm run build`。遇到的 Windows 特有问题记进 `pitfalls.md`。
+  - 2026-10-23 进度（Docker 还没装，只做了不依赖 Docker 的部分）：`uv sync`、`ruff check`、`ruff format --check`、`mypy`、`npm run build` 通过；单元测试（`tests/test_unit_*.py`）修了两个 Windows 问题后 21 个通过、1 个按设计跳过（建符号链接要管理员权限），见 P-011、P-012（`30eca2e`）。**还差**：装 Docker Desktop 后跑 `docker compose up -d --build` 和含集成测试的完整 `uv run pytest -q`。
 - [ ] **B0-6（用户）线上第一次真实使用**：用 GitHub 登录，提交 https://github.com/qq3939/code-nest ，分析完成后考一场 3 题的"项目深挖"，看报告。AI 根据结果新建 `docs/usage.md`（格式见第 4 节），记下第一条。
 - [ ] **B0-7（用户决定）** 本地的 `backup/before-remove-coauthor` 分支要不要删。GitHub 仓库已改名为 https://github.com/qq3939/CodeProof ，旧地址 `qq3939/project_b` 会自动重定向。
 
@@ -143,7 +144,7 @@ SPEC 里程碑中还没达到完成标准的部分：
 ## 5. 验收：什么时候算"能写进简历"
 
 - [ ] 用户本机能启动、能跑全部测试（B0-5）
-- [ ] README 写的是实情，有架构图和线上地址（B0-1）
+- [x] README 写的是实情，有架构图和线上地址（B0-1）
 - [ ] 有一份真实模型的完整评测报告，至少 3 条亮点有数据（B3-8）
 - [ ] 至少 3 个人用过，使用数据记在 `usage.md`（B1-1、B3-9）
 - [ ] 用户能讲清 5 处核心实现（B4-1）
