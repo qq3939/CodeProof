@@ -262,3 +262,73 @@ def test_python_source_roots() -> None:
     assert roots == ["backend", "svc/api"]
     assert module_name(relative_to_root("backend/app/sessions/graph.py", roots)) == "app.sessions.graph"
     assert module_name(relative_to_root("tools/x.py", roots)) == "tools.x"
+
+
+# ---------------------------------------------------------------- AI 应用画像（SPEC 7.4.3，D-023）
+def _ai_profile(files: dict[str, str]) -> tuple[CodeModel, dict]:
+    entries = [
+        FileEntry(id=uuid.uuid4(), path=path, index=parse_python(text.encode("utf-8"), path))
+        for path, text in files.items()
+    ]
+    m = CodeModel(entries)
+    return m, build_profile(m, [], [], files, {"python": len(files)})
+
+
+def test_ai_profile_on_agent_fixture() -> None:
+    files = {p.relative_to(AGENT).as_posix(): p.read_text(encoding="utf-8") for p in sorted(AGENT.rglob("*.py"))}
+    m, prof = _ai_profile(files)
+    ai = prof["ai"]
+
+    def kinds(cat: str) -> set:
+        return {it.get("kind") for it in ai[cat]}
+
+    assert {"tool", "bind_tools"} <= kinds("tools")
+    assert {"agent_loop", "recursion_limit"} <= kinds("agent_loops")
+    assert {"graph", "interrupt", "checkpointer"} <= kinds("graphs")
+    graph = next(it for it in ai["graphs"] if it["kind"] == "graph")
+    assert {"draft_answer", "human_review", "publish"} <= set(graph["nodes"])
+    assert {"server", "tool", "resource"} <= kinds("mcp")
+    assert {"chunking", "embedding", "vector_search", "citation_or_refusal"} <= kinds("rag")
+    assert "prompt_template" in kinds("context")
+    # 夹具里故意埋了三个风险点，各命中一次；测试代码（tests/）不进画像
+    assert {it["rule"]: it["symbol"] for it in ai["risks"]} == {
+        "tool_no_timeout": "fetch_url",
+        "loop_no_limit": "poll_until_done",
+        "tool_output_in_prompt": "ChatAgent.summarize",
+    }
+    keys = {c["topic_key"] for c in build_candidates(m, prof)}
+    assert {"ai.tools", "ai.agent_loops", "ai.graphs", "ai.mcp", "ai.rag", "ai-risk.tool_no_timeout:fetch_url"} <= keys
+    assert "## AI 应用画像" in profile_summary_md(prof)
+
+
+SAFE_AGENT = '''from langchain_core.tools import tool
+import httpx
+
+SYSTEM_PROMPT = "x"
+
+
+@tool
+def fetch(url: str) -> str:
+    """抓网页，设了超时"""
+    return httpx.get(url, timeout=5).text
+
+
+def wait(job):
+    for _ in range(10):
+        if job.done():
+            return
+    while True:
+        if job.done():
+            break
+
+
+def build(ctx):
+    return SYSTEM_PROMPT + wrap_data("ctx", load(ctx))
+'''
+
+
+def test_ai_profile_no_false_risks() -> None:
+    # 设了超时的工具、有上限或有 break 的循环、隔离过再拼接的提示词，都不算风险
+    _, prof = _ai_profile({"agent.py": SAFE_AGENT})
+    assert prof["ai"]["risks"] == []
+    assert [it["symbol"] for it in prof["ai"]["tools"]] == ["fetch"]

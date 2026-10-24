@@ -28,6 +28,11 @@ let es: EventSource | null = null
 const USAGE_LABEL: Record<string, string> = {
   transaction: '事务', cache: '缓存', redis: 'Redis', mq: '消息', scheduled: '定时任务', async: '异步', concurrency: '并发',
 }
+// AI 应用画像（D-023）：八类写法 + 风险点，和"关键用法"一样按类折叠展示
+const AI_LABEL: Record<string, string> = {
+  risks: '风险点', tools: '工具调用', agent_loops: 'Agent 循环', graphs: '状态图', multi_agent: '多 Agent',
+  mcp: 'MCP', rag: 'RAG', context: '上下文与安全', llm_calls: '调用工程化',
+}
 
 async function loadRepo() {
   const [r, s] = await Promise.all([http.get(`/repos/${props.id}`), http.get(`/repos/${props.id}/snapshots`)])
@@ -125,6 +130,11 @@ watch(
   },
 )
 
+const aiRows = computed(() => {
+  const a = profile.value?.ai || {}
+  return Object.keys(AI_LABEL).map((k) => ({ key: k, label: AI_LABEL[k], items: a[k] || [] }))
+})
+const aiCount = computed(() => aiRows.value.reduce((n, r) => n + r.items.length, 0))
 const usageRows = computed(() => {
   const u = profile.value?.usages || {}
   return Object.keys(USAGE_LABEL).map((k) => ({ key: k, label: USAGE_LABEL[k], items: u[k] || [] }))
@@ -210,6 +220,24 @@ const LAYER_LABEL: Record<string, string> = {
         </el-table>
       </el-tab-pane>
 
+      <el-tab-pane v-if="aiCount" :label="`AI 应用（${aiCount}）`" name="ai">
+        <el-collapse :model-value="['risks']">
+          <el-collapse-item v-for="u in aiRows" :key="u.key" :name="u.key" :title="`${u.label}（${u.items.length}）`">
+            <el-empty v-if="!u.items.length" description="没有发现" :image-size="40" />
+            <div v-for="(it, i) in u.items" :key="i" class="usage">
+              <el-link class="mono" :type="u.key === 'risks' ? 'danger' : 'default'" @click="openFile(it.file, it.start_line || it.line, it.end_line || it.line)">
+                {{ it.title || it.symbol }}
+              </el-link>
+              <span class="muted">
+                {{ it.file }}:{{ it.line }}
+                <template v-if="it.kind"> · {{ it.kind }}</template>
+                <template v-if="it.detail"> · {{ it.detail }}</template>
+                <template v-if="it.nodes?.length"> · 节点：{{ it.nodes.join('、') }}</template>
+              </span>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </el-tab-pane>
       <el-tab-pane label="关键用法" name="usages">
         <el-collapse>
           <el-collapse-item v-for="u in usageRows" :key="u.key" :name="u.key" :title="`${u.label}（${u.items.length}）`">

@@ -81,11 +81,19 @@ async def test_python_repo_uses_profile(app_ready: None) -> None:
 
         prof = (await client.get(f"/api/snapshots/{snap['id']}/profile")).json()["profile"]
         assert "POST /api/chat/ask" in {f"{e['method']} {e['path']}" for e in prof["endpoints"]}
-        # 符号表里有 Python 的函数和方法，代码浏览、面试官查代码都能用
+        # AI 应用画像：RAG、状态图都识别出来，夹具里埋的风险点也在（D-023）
+        assert prof["ai"]["rag"] and prof["ai"]["graphs"] and prof["ai"]["risks"]
         r = await client.post(
-            "/api/sessions", json={"snapshot_id": snap["id"], "mode": "deep_dive", "question_count": 1}
+            "/api/sessions", json={"snapshot_id": snap["id"], "mode": "deep_dive", "question_count": 3}
         )
         assert r.status_code == 200, r.text
+        # 有了 AI 应用画像，项目深挖就有设计和风险题可考，不用拿链路题补（D-019）
+        from app.core.db import session_scope
+        from app.models import ExamSession
+
+        async with session_scope() as db:
+            sess = await db.get(ExamSession, __import__("uuid").UUID(r.json()["session"]["id"]))
+            assert sess is not None and {p["kind"] for p in sess.config["plan"]} <= {"design", "risk"}
         await client.post(f"/api/sessions/{r.json()['session']['id']}/finish")
         await drain()
     finally:

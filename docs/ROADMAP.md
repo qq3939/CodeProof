@@ -103,13 +103,13 @@ SPEC 里程碑中还没达到完成标准的部分：
   - 仓库页和考核页标明"通用模式"，说明题目质量比有画像的语言低；
   - 提示词按仓库主语言填写：`app/analysis/generation.py:21`、`:30` 和 `app/agents/interviewer.py:21` 现在写死了"Java 面试官"；
   - 加测试（假模型）：非 Java 的夹具仓库能出题，页面状态正确。
-- [x] **B0-10（AI）语言接口 + Python 支持**（10-24，D-022）：
+- [x] **B0-10（AI）语言接口 + Python 支持**（`5835b9c`，D-022）：
   - `app/analysis/code_model.py` 现在直接依赖 `JavaFileIndex`，先抽出与语言无关的接口，Java 实现照旧通过全部测试；
   - 加 tree-sitter-python 符号索引：函数、类、方法、装饰器（存进 `annotations`）、调用。表结构不用改（`app/models.py:145` 的 `CodeSymbol`：`kind` 是字符串，`annotations` 是 JSONB），线上不用清库；
   - FastAPI 只抽路由和依赖注入；
   - 改动理解模式（`app/agents/change.py:111`、`:231`）也走同一个接口，至少对 Python 文件能用；
   - 仿照 `tests/fixtures/mini-feed` 做一个小型 Python 夹具仓库，里面带一个最小的 Agent（工具、循环、MCP、RAG），供本项和 B0-11 的测试共用。
-- [ ] **B0-11（AI）AI 应用画像**：和 Spring 画像（`app/analysis/spring_profile.py`）一样用规则做确定性抽取，不调用模型。
+- [x] **B0-11（AI）AI 应用画像**（10-24，D-023；按砍范围顺序没做 Milvus、Chroma、FAISS 的专门识别）：和 Spring 画像（`app/analysis/spring_profile.py`）一样用规则做确定性抽取，不调用模型。
 
   | 考点 | 要抽出的证据 |
   |---|---|

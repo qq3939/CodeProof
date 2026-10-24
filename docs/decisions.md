@@ -286,3 +286,26 @@
   - FastAPI 的默认前缀是猜的：挂载时前缀各不相同又解析不出路由器，就不加前缀，路径会少一段；
   - 一个仓库里有多个 Python 包、模块名重名时（比如测试夹具里也有 `app` 包），可能解析到别的包里的同名函数。
 - **相关代码**：`backend/app/analysis/lang_index.py:65`（`FileIndex`）、`:101`（`parser_for`）、`backend/app/analysis/python_index.py:73`（`source_roots`）、`:195`（`parse_python`）、`backend/app/analysis/code_model.py:142`（`_targets`）、`backend/app/analysis/fastapi_profile.py:58`（`extract_fastapi_endpoints`）、`backend/app/agents/change.py:109`（`affected_symbols`）；测试 `backend/tests/test_unit_analysis.py`（`test_python_*`、`test_fastapi_endpoints_and_chains`、`test_change_affected_python`）、`backend/tests/test_integration_languages.py`；夹具 `backend/tests/fixtures/mini-agent/`
+
+## D-023 AI 应用画像：看解析出来的结构做规则抽取，不调模型
+
+- **背景**：用户的目标岗位是 AI 应用开发，面试会追问工具调用、Agent 循环、状态图、RAG 这些设计。Spring 画像只认 `@Transactional`、Redis 这类写法，分析一个 Agent 项目（包括本项目自己）时抓不到这些考点。D-020 定下要做 AI 应用画像，而且本项目用到的 LangGraph 状态图、LangChain 工具调用、MCP Python SDK、pgvector 上的 RAG 必须覆盖，否则没法用本项目考本项目。
+- **方案**：和 Spring 画像一样，用规则做确定性抽取，不调用模型（`ai_profile.py`）。
+  - **八类写法**：工具调用（`@tool`、`bind_tools`、`tools=`）、Agent 循环（调模型并处理 `tool_calls` 的循环、`recursion_limit`）、状态图（`StateGraph` 的节点和条件边、`interrupt`、检查点）、多 Agent（`create_supervisor`、`Send` 等）、MCP（Server、tool、resource、鉴权、传输）、RAG（分块、嵌入、向量检索和索引、重排、引用和拒答）、上下文与安全（提示词常量、截断、隔离）、调用工程化（重试、超时、降级、记账）。
+  - **三条风险规则**：
+    - 发网络请求的工具没设超时；
+    - `while True` 里既没有 break 也没有任何上限；
+    - 提示词常量和函数返回值直接拼接、没经过隔离。
+  - **规则优先看解析出来的结构**（调用、装饰器、赋值），少看原文：分析本项目自己时，这个文件里的正则和注释写满了这些关键词，只看原文会把检测代码本身当成 AI 用法。必须看原文的几条都跳过注释行，正则也写成不会匹配自己的形式。
+  - **出题**：每一类出一个设计类考点（`ai.<类别>`，键稳定，掌握度能跨提交追踪），每个风险点出一个风险类考点。设计和风险类考点的数量上限从总数的 1/6、1/5 放宽到 1/4，因为项目深挖只考这两类（D-019）。仓库页加了"AI 应用"页签，画像摘要里也加了一节。
+- **备选**：
+  - 让模型直接读代码找 AI 写法：每次分析都要花钱，结果不确定，也没法用假模型写测试。
+  - 只按导入了哪些库来判断：只能说"用了 LangGraph"，给不出节点、终止条件、风险点这些能出题的证据。
+  - 只用关键词搜原文：分析本项目自己时会把检测代码、注释、文档字符串都算进来。
+- **为什么选它**：确定性、零成本、能测；证据都落在具体的函数和行上，出题和阅卷能直接用。在测试夹具里埋的三个风险点都能抓到；在本项目自己的后端上，八类里除了多 Agent 都识别出来了，风险点是 0 个，检测代码也没把自己当成 AI 用法（2026-10-24 本机检查）。
+- **代价与风险**：
+  - 规则是按常见写法写的，换个写法就漏：比如工具不是用装饰器、而是用类注册的，或者循环上限写在别处；
+  - "上下文与安全"的风险规则只认"常量 + 函数调用"直接拼接，f-string 拼接、多步拼接都检测不到；
+  - 按 D-020 的砍范围顺序，没做 Milvus、Chroma、FAISS 的专门识别，只有 LangChain 的 `similarity_search` 能覆盖一部分；OpenAI、Anthropic SDK 原生的工具调用只认出带 `tools=` 参数的模型调用；
+  - 只分析 Python 文件，Java 的 Spring AI、LangChain4j 不在范围内。
+- **相关代码**：`backend/app/analysis/ai_profile.py:117`（`extract_ai_profile`）、`:99`（`_while_forever_without_limit`）、`:89`（`_calls_llm`）、`backend/app/analysis/candidates.py:219`（`AI_TOPICS`）、`:262`（`_ai_candidates`）、`backend/app/analysis/spring_profile.py:484`（`build_profile` 里接入）；测试 `backend/tests/test_unit_analysis.py`（`test_ai_profile_*`）、`backend/tests/test_integration_languages.py`；夹具 `backend/tests/fixtures/mini-agent/`；前端 `frontend/src/views/RepoView.vue`（"AI 应用"页签）

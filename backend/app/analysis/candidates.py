@@ -192,8 +192,11 @@ def build_candidates(model: CodeModel, profile: dict[str, Any], limit: int = 40)
             }
         )
 
-    # 去重 + 按重要度排序；每类设上限，保证覆盖面（大仓库里接口有上百个，不能让链路题挤满题库）
-    caps = {"chain": max(3, limit // 5), "mechanism": limit // 3, "risk": limit // 5, "design": limit // 6 + 1}
+    c += _ai_candidates(profile.get("ai") or {})
+
+    # 去重 + 按重要度排序；每类设上限，保证覆盖面（大仓库里接口有上百个，不能让链路题挤满题库）。
+    # 设计和风险的上限比 v1 放宽：项目深挖只考这两类（D-019），AI 应用画像又会多出一批（D-023）
+    caps = {"chain": max(3, limit // 5), "mechanism": limit // 3, "risk": limit // 4, "design": limit // 4}
     seen: set[str] = set()
     per_kind: dict[str, int] = {}
     uniq = []
@@ -210,3 +213,85 @@ def build_candidates(model: CodeModel, profile: dict[str, Any], limit: int = 40)
 
 def topic_key_slug(key: str) -> str:
     return _slug(key)
+
+
+# AI 应用画像的八类，各出一个设计类考点（SPEC 7.4.3、D-023）。说明写成面试会追问的方向
+AI_TOPICS: dict[str, tuple[str, str, int]] = {
+    "tools": (
+        "工具调用的注册与执行",
+        "工具怎么注册给模型、参数 schema 从哪来？工具出错或超时时，Agent 怎么处理？",
+        5,
+    ),
+    "agent_loops": (
+        "Agent 循环与终止条件",
+        "循环在什么条件下结束？步数、Token 预算、递归上限分别在哪里限制？模型反复调用同一个工具怎么办？",
+        5,
+    ),
+    "graphs": (
+        "状态图的节点、条件边与中断",
+        "为什么用状态图而不是手写 while 循环？中断之后怎么恢复，检查点存在哪里？",
+        5,
+    ),
+    "multi_agent": ("多 Agent 的分工与交接", "几个 Agent 怎么分工、怎么把任务交给对方？共享哪些状态？", 4),
+    "mcp": ("MCP Server 暴露的能力与鉴权", "MCP Server 暴露了哪些工具和资源？用什么传输方式？调用方怎么鉴权？", 4),
+    "rag": (
+        "RAG 链路：分块、嵌入、检索与拒答",
+        "分块大小和重叠怎么定？向量检索用的什么索引？检索不到相关内容时怎么处理、怎么给出处？",
+        5,
+    ),
+    "context": (
+        "提示词与上下文组装",
+        "提示词模板怎么组织？上下文太长怎么截断？不可信的内容（代码、网页、工具输出）怎么和指令隔开？",
+        4,
+    ),
+    "llm_calls": (
+        "模型调用的重试、超时、降级与记账",
+        "调模型失败了怎么重试？超时怎么设？强模型不可用时怎么降级？费用怎么记？",
+        4,
+    ),
+}
+
+
+def _ai_ev(it: dict[str, Any]) -> dict[str, Any]:
+    # 函数级的证据取整个函数（最多 40 行）；行级的（提示词常量、建索引语句）往下多带几行上下文
+    if it.get("symbol_id"):
+        return _ev(it["file"], it["start_line"], it["end_line"])
+    return _ev(it["file"], it["line"], it["line"] + 5)
+
+
+def _ai_candidates(ai: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for cat, (title, desc, importance) in AI_TOPICS.items():
+        items = ai.get(cat) or []
+        if not items:
+            continue
+        # 每种写法各取一处当证据（比如 RAG 的分块、嵌入、检索各一处），最多 3 处
+        picked: dict[str, dict[str, Any]] = {}
+        for it in items:
+            picked.setdefault(it.get("kind", ""), it)
+        evs = list(picked.values())[:3]
+        ranges = list({(e["path"], e["start_line"], e["end_line"]): e for e in map(_ai_ev, evs)}.values())
+        out.append(
+            {
+                "kind": "design",
+                "title": title,
+                "description": desc,
+                "evidence": ranges,
+                "importance": importance,
+                "topic_key": f"ai.{cat}",
+                "identifiers": [it["symbol"].split(".")[-1] for it in evs if it.get("symbol_id")][:3],
+            }
+        )
+    for it in ai.get("risks") or []:
+        out.append(
+            {
+                "kind": "risk",
+                "title": it["title"],
+                "description": it["detail"],
+                "evidence": [_ai_ev(it)],
+                "importance": 5,
+                "topic_key": f"ai-risk.{it['rule']}:{it['symbol']}",
+                "identifiers": [it["symbol"].split(".")[-1]],
+            }
+        )
+    return out

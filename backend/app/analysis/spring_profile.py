@@ -495,6 +495,10 @@ def build_profile(
     components = extract_components(model)
     usages = extract_usages(model, sources)
     chains = build_chains(model, endpoints)
+    # 放在函数里导入：ai_profile 要用这里的 is_test_path，模块级互相导入会循环
+    from app.analysis.ai_profile import extract_ai_profile
+
+    ai = extract_ai_profile(model, sources)
     modules: Counter[str] = Counter()
     for f in model.files:
         pkg = f.index.package.split(".")
@@ -513,6 +517,7 @@ def build_profile(
         "components": components,
         "usages": usages,
         "chains": chains,
+        "ai": ai,
         "stats": {
             "files": len(model.files),
             "files_by_language": dict(Counter(f.index.language for f in model.files)),
@@ -522,6 +527,18 @@ def build_profile(
             "resolved_calls": sum(1 for c in model.calls if c.targets),
         },
     }
+
+
+AI_LABELS = {
+    "tools": "工具调用",
+    "agent_loops": "Agent 循环",
+    "graphs": "状态图",
+    "multi_agent": "多 Agent",
+    "mcp": "MCP",
+    "rag": "RAG",
+    "context": "上下文与安全",
+    "llm_calls": "调用工程化",
+}
 
 
 def profile_summary_md(profile: dict[str, Any]) -> str:
@@ -553,6 +570,16 @@ def profile_summary_md(profile: dict[str, Any]) -> str:
             lines.append(
                 f"- {label}：{len(items)} 处，例如 `{items[0]['symbol']}`（{items[0]['file']}:{items[0]['line']}）"
             )
+    ai = profile.get("ai") or {}
+    if any(ai.get(k) for k in AI_LABELS):
+        lines += ["", "## AI 应用画像", ""]
+        for k, label in AI_LABELS.items():
+            items = ai.get(k) or []
+            if items:
+                it = items[0]
+                lines.append(f"- {label}：{len(items)} 处，例如 `{it['symbol']}`（{it['file']}:{it['line']}）")
+        for r in ai.get("risks") or []:
+            lines.append(f"- 风险：{r['title']}（{r['file']}:{r['line']}）")
     s = profile["stats"]
     names = {"java": "Java", "python": "Python"}
     by_lang = s.get("files_by_language") or {"java": s["files"]}
