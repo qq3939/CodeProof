@@ -52,11 +52,12 @@ def _git(cwd: Path, *args: str) -> str:
     return subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True).stdout.strip()
 
 
-def make_repo(name: str = "mini-feed") -> Path:
+def make_repo(name: str = "mini-feed", src: Path | None = None) -> Path:
+    """把夹具目录（默认 mini-feed）复制成一个临时 git 仓库。"""
     dest = _TMP / "src" / name
     if dest.exists():
         shutil.rmtree(dest)
-    shutil.copytree(FIXTURE, dest)
+    shutil.copytree(src or FIXTURE, dest)
     _git(dest, "init", "-q", "-b", "main")
     _git(dest, "add", "-A")
     _git(dest, "commit", "-q", "-m", "init")

@@ -5,7 +5,7 @@ import { ElMessage } from 'element-plus'
 import type Node from 'element-plus/es/components/tree/src/model/node'
 import { http } from '../api/http'
 import { jobEvents } from '../api/sse'
-import { KIND_LABEL, STATUS_LABEL, type Repo, type Snapshot, type Topic } from '../api/types'
+import { GENERIC_MODE_NOTE, KIND_LABEL, STATUS_LABEL, type Repo, type Snapshot, type Topic } from '../api/types'
 import { fmtBytes, fmtTime, shortSha } from '../utils/format'
 import CodeViewer from '../components/CodeViewer.vue'
 import MarkdownView from '../components/MarkdownView.vue'
@@ -159,6 +159,16 @@ const LAYER_LABEL: Record<string, string> = {
       <p class="muted">{{ snap.message }}</p>
       <el-alert v-if="snap.error" type="error" :title="snap.error" :closable="false" />
     </el-card>
+
+    <el-alert
+      v-if="profile?.analysis_mode === 'generic'"
+      type="warning"
+      title="通用模式"
+      :description="GENERIC_MODE_NOTE"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 16px"
+    />
 
     <el-tabs v-if="profile" v-model="tab">
       <el-tab-pane label="概览" name="overview">

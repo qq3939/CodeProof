@@ -27,7 +27,9 @@ from sqlalchemy import delete, insert, select
 from app.analysis.candidates import build_candidates
 from app.analysis.code_model import CodeModel, FileEntry
 from app.analysis.generation import DEEP_DIVE_KINDS, generate_questions, generate_topics
+from app.analysis.generic import generic_candidates, generic_summary_md
 from app.analysis.java_index import Annotation, Call, JavaFileIndex, Symbol, parse_java
+from app.analysis.languages import LANG_BY_EXT, primary_language
 from app.analysis.spring_profile import TextFile, build_profile, profile_summary_md
 from app.core.config import get_settings
 from app.core.db import session_scope
@@ -51,26 +53,6 @@ from app.tools.sandbox import SKIP_DIRS, Sandbox, is_sensitive, snapshot_root
 
 logger = logging.getLogger(__name__)
 
-LANG_BY_EXT = {
-    ".java": "java",
-    ".kt": "kotlin",
-    ".py": "python",
-    ".js": "javascript",
-    ".ts": "typescript",
-    ".vue": "vue",
-    ".xml": "xml",
-    ".yml": "yaml",
-    ".yaml": "yaml",
-    ".properties": "properties",
-    ".sql": "sql",
-    ".md": "markdown",
-    ".go": "go",
-    ".html": "html",
-    ".css": "css",
-    ".gradle": "gradle",
-    ".json": "json",
-    ".sh": "shell",
-}
 MAX_TOPICS_WITH_QUESTIONS = 20
 QUESTIONS_PER_TOPIC = 1
 
@@ -231,7 +213,14 @@ async def run_analysis(snapshot_id: uuid.UUID, job_id: str | None = None) -> Non
         # ---------------- 3. 画像
         await set_status(snapshot_id, "profiling", 45, "正在生成仓库画像")
         profile = build_profile(model, build_files, config_files, sources, dict(lang_stats))
-        summary = profile_summary_md(profile)
+        lang = primary_language(lang_stats)
+        candidates = build_candidates(model, profile)
+        # 规则抽不出候选考点（不是 Java，或者 Java 代码里没有可考的画像）就走通用兜底（SPEC 7.4.4、D-021）。
+        # v1 在这种情况下照样显示"分析完成"，题库却是空的
+        generic = not candidates
+        profile["primary_language"] = lang
+        profile["analysis_mode"] = "generic" if generic else "profile"
+        summary = generic_summary_md(lang, dict(lang_stats), len(file_rows)) if generic else profile_summary_md(profile)
         async with session_scope() as db:
             await db.execute(delete(RepoProfile).where(RepoProfile.snapshot_id == snapshot_id))
             db.add(RepoProfile(snapshot_id=snapshot_id, profile=profile, summary_md=summary))
@@ -239,9 +228,21 @@ async def run_analysis(snapshot_id: uuid.UUID, job_id: str | None = None) -> Non
 
         # ---------------- 4. 考点与题库
         await set_status(snapshot_id, "generating", 60, "正在生成考点和题库")
-        stats = await _generate(snapshot_id, base_id, sandbox, model, profile, summary, file_rows, ctx)
+        generic_tokens = 0
+        if generic:
+            candidates, generic_tokens = await generic_candidates(sandbox, file_rows, lang, ctx.child("generic"))
+        stats = await _generate(snapshot_id, base_id, sandbox, candidates, summary, file_rows, ctx, lang)
+        if not stats["questions"]:
+            raise AnalysisError(
+                "通用模式下没能生成题目：仓库里可能没有足够的源码，或者模型给出的证据行号都没通过校验"
+                if generic
+                else "没能生成任何题目：考点的证据校验都没通过，或者出题模型调用失败，可以稍后重试"
+            )
+        stats["tokens_used"] += generic_tokens
         stats.update(
             {
+                "analysis_mode": profile["analysis_mode"],
+                "primary_language": lang,
                 "java_files": len(entries),
                 "parse_cache_hits": cache_hits,
                 "loc": sum(r["lines"] for r in file_rows if r["language"] == "java"),
@@ -304,13 +305,12 @@ async def _generate(
     snapshot_id: uuid.UUID,
     base_id: uuid.UUID | None,
     sandbox: Sandbox,
-    model: CodeModel,
-    profile: dict[str, Any],
+    candidates: list[dict[str, Any]],
     summary: str,
     file_rows: list[dict[str, Any]],
     ctx: CallContext,
+    lang: str | None,
 ) -> dict[str, Any]:
-    candidates = build_candidates(model, profile)
     stats: dict[str, Any] = {
         "candidates": len(candidates),
         "topics_reused": 0,
@@ -389,7 +389,7 @@ async def _generate(
     tokens_used = 0
     topics: list[dict[str, Any]] = []
     if todo:
-        topics, t_tokens = await generate_topics(sandbox, todo, summary, ctx.child("topics"))
+        topics, t_tokens = await generate_topics(sandbox, todo, summary, ctx.child("topics"), lang=lang)
         tokens_used += t_tokens
     async with session_scope() as db:
         topic_rows: list[tuple[Topic, dict[str, Any]]] = []
@@ -415,7 +415,7 @@ async def _generate(
     n_q = 0
     for i, (row, t) in enumerate(topic_rows[: max(0, MAX_TOPICS_WITH_QUESTIONS - stats["topics_reused"])]):
         qs, q_tokens, model_name = await generate_questions(
-            sandbox, t, ctx.child("questions"), count=QUESTIONS_PER_TOPIC
+            sandbox, t, ctx.child("questions"), count=QUESTIONS_PER_TOPIC, lang=lang
         )
         tokens_used += q_tokens
         async with session_scope() as db:

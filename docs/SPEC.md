@@ -286,7 +286,7 @@ LangGraph 检查点表由 `AsyncPostgresSaver.setup()` 创建。
 - **框架覆盖范围**：本项目自己用到的 LangGraph 状态图、LangChain 工具调用、MCP Python SDK、pgvector 上的 RAG 必须覆盖，否则没法用本项目考本项目。
 - **砍范围的顺序**（到 2026-10-30 还没达到验收标准时）：先砍其他向量库（Milvus、Chroma、FAISS）的识别，再砍 OpenAI 和 Anthropic SDK 原生的工具调用写法。
 
-#### 7.4.4 通用兜底（M8）
+#### 7.4.4 通用兜底（M8，D-021）
 
 - **适用范围**：主语言没有专门支持的仓库（Java、Python 以外）。跳过符号索引和框架画像，由快模型根据目录结构、README、构建文件和 grep 结果生成候选考点，再走 7.5 的证据校验。
 - **页面提示**：仓库页和考核页标明"通用模式"，说明题目质量比有画像的语言低。

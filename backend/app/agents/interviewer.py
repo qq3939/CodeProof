@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 from app.agents.schemas import HintOut, QuickAssessOut
+from app.analysis.languages import display_name
 from app.core.config import get_settings
 from app.core.text import containment
 from app.llm.client import get_llm, wrap_data
@@ -17,10 +18,19 @@ from app.llm.types import CallContext, LLMError
 
 logger = logging.getLogger(__name__)
 
-ROLE = (
-    "你是一位严谨但友善的 Java 技术面试官，正在以候选人自己的代码为证据考察他对代码的理解。"
-    "你只提问、追问、给提示，绝不直接说出答案，也不替候选人写代码。"
-)
+
+def role(lang: str | None) -> str:
+    """面试官的身份按仓库主语言填写（D-021）；v1 写死"Java 技术面试官"。
+
+    题目字典里的 lang 来自出题计划（planner.build_plan）；没有时（比如改动前开始的会话）只说"技术面试官"。
+    """
+    name = display_name(lang)
+    who = f" {name} 技术面试官" if name else "技术面试官"
+    return (
+        f"你是一位严谨但友善的{who}，正在以候选人自己的代码为证据考察他对代码的理解。"
+        "你只提问、追问、给提示，绝不直接说出答案，也不替候选人写代码。"
+    )
+
 
 LEAK_THRESHOLD = 0.6
 
@@ -48,7 +58,7 @@ async def ask_stream(question: dict[str, Any], style: str, ctx: CallContext, pre
         for i in range(0, len(text), 12):
             yield text[i : i + 12]
         return
-    system = f"{ROLE}\n把下面的题目改写成自然的面试官口吻，保持原意，不要增加提示，不要透露答案。只输出改写后的问题。"
+    system = f"{role(question.get('lang'))}\n把下面的题目改写成自然的面试官口吻，保持原意，不要增加提示，不要透露答案。只输出改写后的问题。"
     async for piece in get_llm().stream(
         task="session.ask.text",
         tier="strong",
@@ -62,7 +72,7 @@ async def ask_stream(question: dict[str, Any], style: str, ctx: CallContext, pre
 
 async def quick_assess(question: dict[str, Any], answer: str, ctx: CallContext) -> QuickAssessOut:
     system = (
-        f"{ROLE}\n判断候选人对这道题的回答属于哪一类：complete 完整 / partial 部分 / wrong 错误 / off_topic 跑题 / unknown 不会。"
+        f"{role(question.get('lang'))}\n判断候选人对这道题的回答属于哪一类：complete 完整 / partial 部分 / wrong 错误 / off_topic 跑题 / unknown 不会。"
         "列出还没答到的要点下标，并抽出回答里关于代码的具体说法（类名、方法名、注解、配置），供下一步去代码里核对。"
         "这只是用来决定下一步怎么问，不是最终分数。"
     )
@@ -98,7 +108,7 @@ async def follow_up(
     """生成追问。先完整生成、做防泄露检查，再由调用方分片推给前端（见 D-008）。"""
     missing = [question["key_points"][i] for i in assess.missing_points] or question["key_points"]
     system = (
-        f"{ROLE}\n候选人的回答有缺口。针对缺口提一个追问：可以引用代码位置（文件、方法名），"
+        f"{role(question.get('lang'))}\n候选人的回答有缺口。针对缺口提一个追问：可以引用代码位置（文件、方法名），"
         "但绝不能把答案要点直接说出来。只输出一句或两句追问。"
     )
     user = (
@@ -153,7 +163,7 @@ async def give_hint(
 ) -> str:
     """分级提示 + 防泄露（SPEC 8.5）：和要点太相似就重新生成，最多 3 次，再不行用通用模板。"""
     level = max(1, min(3, level))
-    system = f"{ROLE}\n候选人请求提示。{HINT_LEVEL_DESC[level]} 只输出提示本身。"
+    system = f"{role(question.get('lang'))}\n候选人请求提示。{HINT_LEVEL_DESC[level]} 只输出提示本身。"
     if next_station:
         system += f"\n这是链路学习模式，优先告诉候选人“下一站在哪”：{next_station.get('symbol')}。"
     user = (

@@ -37,6 +37,10 @@ export interface SessionState {
 
 export interface SessionDetail { session: SessionInfo; turns: Turn[]; state: SessionState | null; events: any[] }
 
+// 通用模式（D-021）：仓库主语言没有专门的画像，考点由模型挑出，要让用户知道题目质量会低一些
+export const GENERIC_MODE_NOTE =
+  '这个仓库的主语言没有专门的符号索引和画像，用的是通用模式：考点由模型根据目录、README、主要源码和关键词搜索挑出，每个考点仍然校验证据行号，但题目质量比有画像的语言（Java）低。'
+
 export const MODE_LABEL: Record<string, string> = {
   deep_dive: '项目深挖', kb_link: '八股联系项目', resume: '简历追问', chain: '链路学习', change: '改动理解',
 }

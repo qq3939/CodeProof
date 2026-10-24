@@ -13,6 +13,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.analysis.generation import DEEP_DIVE_KINDS, generate_questions
+from app.analysis.languages import primary_language
 from app.core.db import session_scope
 from app.core.errors import AppError
 from app.llm.types import CallContext
@@ -34,6 +35,25 @@ MODES = {"deep_dive", "kb_link", "resume", "chain", "change"}
 
 
 async def build_plan(sess: ExamSession) -> list[dict[str, Any]]:
+    """按模式定出题计划，并给每一项带上仓库主语言：出题和面试官的提示词按它填写（D-021）。"""
+    plan = await _plan_items(sess)
+    lang = await snapshot_language(sess.snapshot_id)
+    for item in plan:
+        item["lang"] = lang
+    return plan
+
+
+async def snapshot_language(snapshot_id: uuid.UUID) -> str | None:
+    """仓库主语言：分析时写进画像；画像里没有（改动之前分析的快照）就按快照的语言统计现算。"""
+    async with session_scope() as db:
+        prof = await db.get(RepoProfile, snapshot_id)
+        if prof is not None and "primary_language" in (prof.profile or {}):
+            return prof.profile["primary_language"]
+        snap = await db.get(RepoSnapshot, snapshot_id)
+        return primary_language(snap.lang_stats or {}) if snap is not None else None
+
+
+async def _plan_items(sess: ExamSession) -> list[dict[str, Any]]:
     async with session_scope() as db:
         snap = await db.get(RepoSnapshot, sess.snapshot_id)
         assert snap is not None
@@ -229,6 +249,7 @@ def _qdict(q: Question, item: dict[str, Any]) -> dict[str, Any]:
         "title": item.get("title"),
         "kind": item.get("kind"),
         "next_station": item.get("next_station"),
+        "lang": item.get("lang"),
     }
 
 
@@ -282,6 +303,7 @@ async def materialize(
         kb=kb,
         extra_snippets=extra_snippets,
         extra_context=extra,
+        lang=item.get("lang"),
     )
     if not qs:
         return None

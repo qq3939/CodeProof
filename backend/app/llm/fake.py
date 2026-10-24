@@ -89,6 +89,36 @@ def _topics(p: dict[str, Any]) -> dict[str, Any]:
     return {"topics": topics}
 
 
+GENERIC_KIND = {"重试与超时": "risk", "并发": "risk", "鉴权": "risk", "事务": "risk", "路由与入口": "chain"}
+
+
+@task("topics.generic")
+def _generic_topics(p: dict[str, Any]) -> dict[str, Any]:
+    # 通用兜底：真实模型会读目录、README 和源码挑考点；假模型直接把每条关键词命中当成一个考点，
+    # 证据就是命中的那一行，标识符取那一行里的代码词，保证能通过证据校验
+    topics, seen = [], set()
+    for h in p.get("hits", []):
+        key = (h["label"], h["path"])
+        if key in seen:
+            continue
+        seen.add(key)
+        name = h["path"].rsplit("/", 1)[-1]
+        topics.append(
+            {
+                "kind": GENERIC_KIND.get(h["label"], "design"),
+                "title": f"{name} 里的{h['label']}",
+                "description": h["text"] or h["label"],
+                "evidence": [{"path": h["path"], "start_line": h["line"], "end_line": h["line"]}],
+                "importance": 4,
+                "topic_key": f"{name}-{h['line']}",
+                "identifiers": _snippet_idents(h["text"], 2),
+            }
+        )
+        if len(topics) >= p.get("limit", 15):
+            break
+    return {"topics": topics}
+
+
 # ---------------------------------------------------------------- 出题
 @task("questions.generate")
 def _questions(p: dict[str, Any]) -> dict[str, Any]:

@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { http } from '../api/http'
 import { postStream, type StreamEvent } from '../api/sse'
-import { KIND_LABEL, MODE_LABEL, STATUS_LABEL, type SessionDetail, type Turn } from '../api/types'
+import { GENERIC_MODE_NOTE, KIND_LABEL, MODE_LABEL, STATUS_LABEL, type SessionDetail, type Turn } from '../api/types'
 import MarkdownView from '../components/MarkdownView.vue'
 
 const props = defineProps<{ id: string }>()
@@ -22,9 +22,14 @@ const state = computed(() => detail.value?.state)
 const sess = computed(() => detail.value?.session)
 const active = computed(() => sess.value?.status === 'active')
 
+const generic = ref(false)
+
 async function load() {
   const { data } = await http.get<SessionDetail>(`/sessions/${props.id}`)
   apply(data)
+  if (!detail.value || generic.value) return
+  const p = await http.get(`/snapshots/${data.session.snapshot_id}/profile`).catch(() => null)
+  generic.value = p?.data.profile.analysis_mode === 'generic'
   // 改动理解模式要先在后台拉取 diff、生成题目，状态是 preparing，这里轮询到它就绪
   if (data.session.status === 'preparing') timer = window.setTimeout(load, 2000)
 }
@@ -161,6 +166,9 @@ function onKey(e: KeyboardEvent) {
         <h1 class="page-title grow" style="margin: 0">
           {{ MODE_LABEL[sess!.mode] || sess!.mode }}
           <el-tag size="small" style="margin-left: 8px">{{ STATUS_LABEL[sess!.status] || sess!.status }}</el-tag>
+          <el-tooltip v-if="generic" :content="GENERIC_MODE_NOTE" placement="bottom">
+            <el-tag size="small" type="warning" style="margin-left: 8px">通用模式</el-tag>
+          </el-tooltip>
         </h1>
         <el-button v-if="!active && sess!.status !== 'preparing'" type="primary" @click="$router.push(`/sessions/${id}/report`)">查看报告</el-button>
       </div>

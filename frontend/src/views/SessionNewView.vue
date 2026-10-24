@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { http } from '../api/http'
-import { MODE_LABEL, type Repo } from '../api/types'
+import { GENERIC_MODE_NOTE, MODE_LABEL, type Repo } from '../api/types'
 import { shortSha } from '../utils/format'
 
 const route = useRoute()
@@ -10,6 +10,7 @@ const router = useRouter()
 const repos = ref<Repo[]>([])
 const resumes = ref<any[]>([])
 const endpoints = ref<string[]>([])
+const generic = ref(false)
 const loading = ref(false)
 
 const form = reactive({
@@ -29,7 +30,7 @@ const form = reactive({
 })
 
 const MODE_DESC: Record<string, string> = {
-  deep_dive: '围绕项目里的设计决策、风险点、关键机制提问，每个回答都要能在代码里找到依据。',
+  deep_dive: '像面试官一样追问项目里的设计决策和风险点：为什么这样设计、有什么取舍、出了故障怎么办；每个回答都要能在代码里找到依据。',
   kb_link: '先问八股知识点，再追问"你的项目里哪里用到了、和标准做法有什么不同"。可以结合知识库里的笔记。',
   chain: '选一个接口，从 Controller 到数据库逐站讲解，每一站都问你"这里做了什么、为什么"。',
   resume: '把简历里的项目经历和代码对照，追问有证据的说法，指出代码里找不到的说法。',
@@ -48,8 +49,10 @@ const readyRepos = computed(() => repos.value.filter((r) => r.latest_snapshot?.s
 watch(
   () => [form.snapshot_id, form.mode],
   async () => {
-    if (form.mode !== 'chain' || !form.snapshot_id) return
+    if (!form.snapshot_id) return
     const { data } = await http.get(`/snapshots/${form.snapshot_id}/profile`)
+    generic.value = data.profile.analysis_mode === 'generic'
+    if (form.mode !== 'chain') return
     endpoints.value = (data.profile.chains || []).map((c: any) => c.endpoint)
     if (!form.endpoint) form.endpoint = endpoints.value[0] || ''
   },
@@ -102,6 +105,7 @@ async function submit() {
               :label="`快照 ${shortSha(form.snapshot_id)}`"
             />
           </el-select>
+          <el-alert v-if="generic" type="warning" title="通用模式" :description="GENERIC_MODE_NOTE" :closable="false" show-icon style="margin-top: 8px" />
         </el-form-item>
         <el-form-item label="模式">
           <el-radio-group v-model="form.mode">

@@ -8,6 +8,7 @@ from typing import Any
 
 from app.agents.schemas import QuestionList, QuestionOut, TopicList, TopicOut
 from app.analysis import evidence as evcheck
+from app.analysis.languages import interviewer_title
 from app.core.text import truncate
 from app.llm.client import get_llm, wrap_data
 from app.llm.types import CallContext, LLMError
@@ -18,7 +19,8 @@ logger = logging.getLogger(__name__)
 # 项目深挖只从这两类考点出题（SPEC 3.2、D-019）：链路题留给"链路学习"，机制题留给"八股联系项目"
 DEEP_DIVE_KINDS = ("design", "risk")
 
-TOPIC_SYSTEM = """你是资深 Java 面试官，正在为一个仓库挑选考点。
+# {title} 按仓库主语言填写（D-021）：v1 写死"资深 Java 面试官"，换成别的语言的仓库也照样自称 Java 面试官
+TOPIC_SYSTEM = """你是{title}，正在为一个仓库挑选考点。
 输入是确定性分析得出的候选考点（每个都带真实代码证据）和仓库画像摘要。
 任务：
 1. 从候选中挑出最值得考的点，可以改写标题和说明，让它像真实面试会问的问题方向；
@@ -27,7 +29,7 @@ TOPIC_SYSTEM = """你是资深 Java 面试官，正在为一个仓库挑选考�
 4. topic_key 尽量沿用候选里的值，便于跨版本追踪掌握度；
 5. identifiers 填证据片段里真实出现的类名或方法名。"""
 
-QUESTION_SYSTEM = """你是资深 Java 面试官，根据一个考点和它的代码证据出面试题。
+QUESTION_SYSTEM = """你是{title}，根据一个考点和它的代码证据出面试题。
 要求：
 - 题目必须基于代码事实，像真实面试官会问的，不要问八股定义；
 - 每道题 2-5 个答案要点，每个要点都要带证据位置（文件 + 行号，必须落在给出的片段范围内）；
@@ -62,7 +64,12 @@ def _snippet_block(sandbox: Sandbox, evs: list[dict[str, Any]], limit_chars: int
 
 
 async def generate_topics(
-    sandbox: Sandbox, candidates: list[dict[str, Any]], profile_md: str, ctx: CallContext, limit: int = 30
+    sandbox: Sandbox,
+    candidates: list[dict[str, Any]],
+    profile_md: str,
+    ctx: CallContext,
+    limit: int = 30,
+    lang: str | None = None,
 ) -> tuple[list[dict[str, Any]], int]:
     """返回 (校验通过的考点, 消耗 Token)。模型失败时退回到确定性候选。"""
     if not candidates:
@@ -83,7 +90,7 @@ async def generate_topics(
         out, usage = await llm.structured(
             task="topics.generate",
             tier="fast",
-            system=TOPIC_SYSTEM,
+            system=TOPIC_SYSTEM.format(title=interviewer_title(lang)),
             user=user,
             schema=TopicList,
             ctx=ctx,
@@ -112,7 +119,7 @@ async def generate_topics(
             out2, usage2 = await llm.structured(
                 task="topics.generate",
                 tier="fast",
-                system=TOPIC_SYSTEM,
+                system=TOPIC_SYSTEM.format(title=interviewer_title(lang)),
                 user=fix_user,
                 schema=TopicList,
                 ctx=ctx,
@@ -155,6 +162,7 @@ async def generate_questions(
     extra_snippets: list[dict[str, Any]] | None = None,
     kb: list[dict[str, Any]] | None = None,
     extra_context: str = "",
+    lang: str | None = None,
 ) -> tuple[list[dict[str, Any]], int, str]:
     """为一个考点出题。返回 (题目列表, Token, 模型名)。"""
     snippet_text, snippets = _snippet_block(sandbox, topic["evidence"] + (extra_snippets or []), 9000)
@@ -177,7 +185,7 @@ async def generate_questions(
             out, usage = await llm.structured(
                 task="questions.generate",
                 tier="strong",
-                system=QUESTION_SYSTEM,
+                system=QUESTION_SYSTEM.format(title=interviewer_title(lang)),
                 user=user,
                 schema=QuestionList,
                 ctx=ctx,

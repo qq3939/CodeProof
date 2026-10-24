@@ -45,7 +45,7 @@
 - **备选**：全部真流式，事后发现泄露再撤回（用户已经看到了）。
 - **为什么选它**：防泄露是硬要求，体验上的损失只是首字慢一点。
 - **代价与风险**：追问的首字延迟等于整段生成时间；containment 是词面相似度，换个说法的泄露检测不到。
-- **相关代码**：`backend/app/agents/interviewer.py:35`、`backend/app/sessions/graph.py:91`
+- **相关代码**：`backend/app/agents/interviewer.py:45`、`backend/app/sessions/graph.py:91`
 
 ## D-005 作答用 POST + fetch-event-source，而不是 WebSocket 或 EventSource
 
@@ -81,7 +81,7 @@
 - **备选**：只按文件路径 + 修改时间判断（git 检出后修改时间不可靠）；每次全量重做（简单但贵）。
 - **为什么选它**：内容哈希天然正确；`topic_key` 让"同一个考点"跨快照可识别，掌握度也依赖它。
 - **代价与风险**：考点证据之外的文件改了也可能影响考点（例如被调用方改了），这种情况会被错误复用。
-- **相关代码**：`backend/app/analysis/pipeline.py:101`、`backend/app/analysis/pipeline.py:303`、测试 `backend/tests/test_integration_flow.py:220`
+- **相关代码**：`backend/app/analysis/pipeline.py:83`、`backend/app/analysis/pipeline.py:304`、测试 `backend/tests/test_integration_flow.py:220`
 
 ## D-009 限流用 Redis 固定窗口
 
@@ -208,7 +208,7 @@
   - 小仓库补题时仍会混进机制题；
   - 题库在分析时生成：线上已经分析好的快照，部署后选题范围马上生效，但题干还是旧问法，要重新分析才会换；增量分析会复用没改动的考点和题目，旧问法会一直沿用到这些考点的代码改动为止；
   - 新问法还没用真实模型验证过，修改前后的题目对比等线上重新分析后补上。
-- **相关代码**：`backend/app/analysis/generation.py:19`（`DEEP_DIVE_KINDS`）、`:40`（`DEEP_DIVE_STYLE`）、`backend/app/sessions/planner.py:184`（`pick_deep_dive`）、`backend/app/analysis/pipeline.py:414`（题库出题顺序）；测试 `backend/tests/test_unit_misc.py`（`test_pick_deep_dive_only_design_and_risk`）、`backend/tests/test_integration_flow.py`（`test_full_session_flow` 里检查出题计划的考点类型）
+- **相关代码**：`backend/app/analysis/generation.py:20`（`DEEP_DIVE_KINDS`）、`:40`（`DEEP_DIVE_STYLE`）、`backend/app/sessions/planner.py:204`（`pick_deep_dive`）、`backend/app/analysis/pipeline.py:414`（题库出题顺序）；测试 `backend/tests/test_unit_misc.py`（`test_pick_deep_dive_only_design_and_risk`）、`backend/tests/test_integration_flow.py`（`test_full_session_flow` 里检查出题计划的考点类型）
 
 ## D-020 功能定稿与冻结：加通用兜底、Python 支持和 AI 应用画像，最晚 11-01 冻结
 
@@ -237,3 +237,25 @@
   - 通用兜底的题目质量比有画像的语言低，必须在页面上标明，免得用户以为判分同样可靠；
   - 冻结后想到的新功能都要等投递之后。
 - **相关代码**：要改的位置见 ROADMAP 的 B0-9 至 B0-11（`backend/app/analysis/pipeline.py`、`backend/app/analysis/candidates.py` 的 `build_candidates`、`backend/app/analysis/code_model.py`、`backend/app/analysis/spring_profile.py`、`backend/app/agents/change.py`）；SPEC 3.1、3.3、3.4、7.3、7.4、14、15、17、M7、M8
+
+## D-021 通用兜底：规则抽不出考点时由快模型挑，照样校验证据
+
+- **背景**：v1 的候选考点只从 Java 符号索引和 Spring 画像里来（`build_candidates`）。提交一个非 Java 仓库时，符号索引和画像都是空的，候选考点也是空的，流水线却照常走完，显示"分析完成"，题库里一道题都没有，开考时才报"还没有题库"。出题和面试官的提示词也写死了"Java 面试官"。D-020 定下要支持其他语言，这一步是最低保障：任何语言都能出题。
+- **方案**：
+  - **什么时候用**：规则抽出的候选考点为空时走通用模式。不是看主语言是不是 Java：前后端在一个仓库里的项目（Java + Vue），Vue 文件可能比 Java 文件还多，按文件数判断会误判。
+  - **怎么出考点**：快模型看目录结构、README、构建文件、主语言里最大的几个非测试文件（带行号）和七类关键词（重试与超时、缓存、并发、事务、鉴权、消息与定时、路由与入口）的搜索结果，挑出候选考点，每个都要给证据行号；再照常交给 `generate_topics`，和规则考点走同一套证据校验。
+  - **出不了题就失败**：一道题都没生成时，分析直接失败并写明原因，不再显示"分析完成"；用户点"检查新提交"可以重试。
+  - **提示词按主语言填写**：主语言是文件数最多的编程语言，写进画像（`primary_language`），出题、选考点和面试官的提示词都按它填（"资深 Go 面试官"），出题计划的每一项也带上它。
+  - **页面标明**：仓库页、开始考核页、考核页都标出"通用模式"，说明题目质量比有画像的语言低。
+- **备选**：
+  - 遇到不支持的语言直接报"不支持"：同学的项目大多用不了，D-020 要解决的正是这个。
+  - 让模型直接出题，跳过候选考点：少一步，但题目的证据就没有"候选考点 → 证据校验"这一道关，编出来的行号更难发现。
+  - 只用关键词规则出考点，不调用模型：不同语言的写法差别太大，规则挑出来的多是噪声（比如注释里的 commit）。
+  - 一道题都出不来时仍显示"分析完成"，只在页面上提示：用户会以为可以开考，到开考时才发现不行。
+- **为什么选它**：用一次快模型调用换来"任何语言都能出题"，成本低；证据校验和规则考点共用同一套，编造的行号仍然会被拦下；模式按"规则有没有抽出考点"判断，Java 仓库的行为完全不变。
+- **代价与风险**：
+  - 通用模式多一次快模型调用，选考点又是一次，比 Java 仓库多花一点钱；
+  - 模型给的 `topic_key` 不稳定，同一个考点换个提交可能换了名字，掌握度和增量分析的复用效果比规则考点差；
+  - 关键词搜索有噪声，要靠模型筛掉；
+  - 出题模型临时故障也会让分析失败（v1 是"完成但没题"），需要用户手动重试。
+- **相关代码**：`backend/app/analysis/generic.py:110`（`generic_candidates`）、`backend/app/analysis/pipeline.py:222`（判断通用模式）、`:235`（一道题都没有就失败）、`backend/app/analysis/languages.py:86`（`primary_language`）、`backend/app/agents/interviewer.py:22`（`role`）；测试 `backend/tests/test_integration_generic.py`；前端 `frontend/src/api/types.ts`（`GENERIC_MODE_NOTE`）
