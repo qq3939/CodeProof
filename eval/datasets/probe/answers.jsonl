@@ -1,0 +1,15 @@
+{"id": "p1-complete", "question_id": "p1", "quality": "complete", "text": "计数不直接写库，先走 Redis：一个 Lua 脚本里 HINCRBY 加计数、再 SADD 把文章 ID 记进脏集合，两步是原子的。如果 Hash 不存在脚本返回 -1，Java 先 loadFromDb 把库里的初值载进来再重试，不然从 0 开始加，写回时会把库里的数覆盖掉。定时任务每 10 秒 flush 一次：SPOP 一批脏 ID，读 Redis 里的绝对值批量 upsert，写库失败就把 ID 放回脏集合。写绝对值是幂等的，任务重复执行或者重试结果都一样，写增量的话会重复累加。"}
+{"id": "p1-partial", "question_id": "p1", "quality": "partial", "text": "点赞数先在 Redis 里用 Lua 脚本 HINCRBY 自增，同时把文章 ID 放进一个脏集合，后面有个定时任务会把这些数写回数据库。"}
+{"id": "p1-wrong", "question_id": "p1", "quality": "wrong", "text": "每次点赞都直接 UPDATE 数据库的 like_count = like_count + 1，靠数据库行锁保证不丢更新，Redis 只用来缓存文章详情。"}
+{"id": "p1-contradict", "question_id": "p1", "quality": "contradict", "text": "计数先在 Redis 里累加，定时任务写回的时候把 Redis 里攒的增量加到库里，写完就把 Redis 里的计数清零。这样写回是增量的，所以必须保证任务只执行一次。"}
+{"id": "p1-unknown", "question_id": "p1", "quality": "unknown", "text": "不知道"}
+{"id": "p2-complete", "question_id": "p2", "quality": "complete", "text": "Redis 不参与数据库事务，事务回滚了 Redis 的修改也撤不回来，计数就会和库对不上；而且事务没提交时别的请求读库看不到新数据。项目里用 AfterCommit.run，底层是 TransactionSynchronization 的 afterCommit，把改 Redis 推迟到事务提交以后。likeArticle 在事务里只写点赞记录和 outbox 消息，计数加一、更新点赞者列表都放在 AfterCommit.run 里。"}
+{"id": "p2-partial", "question_id": "p2", "quality": "partial", "text": "Redis 不跟着数据库事务回滚，所以事务失败时 Redis 里的计数已经加上了，会不一致。"}
+{"id": "p2-wrong", "question_id": "p2", "quality": "wrong", "text": "没什么问题，Spring 的 @Transactional 会把 Redis 操作也包进事务里，回滚的时候一起回滚。"}
+{"id": "p2-contradict", "question_id": "p2", "quality": "contradict", "text": "项目里是在事务开始之前先把 Redis 计数加上，事务失败了再在 catch 里手动减回去。"}
+{"id": "p2-unknown", "question_id": "p2", "quality": "unknown", "text": "不会"}
+{"id": "p3-complete", "question_id": "p3", "quality": "complete", "text": "用本地消息表：业务事务里把消息写进 outbox 表，OutboxService.save 用 Propagation.MANDATORY，没有外层事务直接报错，保证消息和业务数据一起提交。提交后在 afterCommit 里 publishAsync 立即发送；中继任务 relayDue 定时捞出到期还没确认的消息补发，按指数退避，超过最大次数标记失败。发送开了 publisher confirm，收到 ack 才标记已发送，消息设成持久化。"}
+{"id": "p3-partial", "question_id": "p3", "quality": "partial", "text": "用本地消息表，业务和消息在同一个事务里写进 outbox 表，事务提交后再发到 RabbitMQ。"}
+{"id": "p3-wrong", "question_id": "p3", "quality": "wrong", "text": "用 RocketMQ 的事务消息，先发半消息，本地事务成功后再提交消息。"}
+{"id": "p3-contradict", "question_id": "p3", "quality": "contradict", "text": "项目是在事务里直接调用 rabbitTemplate 发消息，发完再提交事务，没有用 outbox 表。"}
+{"id": "p3-unknown", "question_id": "p3", "quality": "unknown", "text": "这个我不清楚"}

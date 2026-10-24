@@ -1,0 +1,15 @@
+{"answer_id": "p1-complete", "points": ["hit", "hit", "hit", "hit"], "score": 95}
+{"answer_id": "p1-partial", "points": ["hit", "miss", "partial", "miss"], "score": 40}
+{"answer_id": "p1-wrong", "points": ["miss", "miss", "miss", "miss"], "score": 5}
+{"answer_id": "p1-contradict", "points": ["partial", "miss", "miss", "miss"], "score": 10}
+{"answer_id": "p1-unknown", "points": ["miss", "miss", "miss", "miss"], "score": 0}
+{"answer_id": "p2-complete", "points": ["hit", "hit", "hit"], "score": 95}
+{"answer_id": "p2-partial", "points": ["hit", "miss", "miss"], "score": 35}
+{"answer_id": "p2-wrong", "points": ["miss", "miss", "miss"], "score": 0}
+{"answer_id": "p2-contradict", "points": ["partial", "miss", "miss"], "score": 10}
+{"answer_id": "p2-unknown", "points": ["miss", "miss", "miss"], "score": 0}
+{"answer_id": "p3-complete", "points": ["hit", "hit", "hit", "hit"], "score": 95}
+{"answer_id": "p3-partial", "points": ["hit", "hit", "miss", "miss"], "score": 50}
+{"answer_id": "p3-wrong", "points": ["miss", "miss", "miss", "miss"], "score": 0}
+{"answer_id": "p3-contradict", "points": ["miss", "miss", "miss", "miss"], "score": 0}
+{"answer_id": "p3-unknown", "points": ["miss", "miss", "miss", "miss"], "score": 0}
