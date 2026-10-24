@@ -28,6 +28,10 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@v4
+      # 只用标准库，放在最前面：文档引用对不上时最快报出来（ROADMAP B0-13）
+      - name: 学习文档引用检查（文件:行号 和函数名要对得上）
+        working-directory: .
+        run: python3 scripts/check_doc_refs.py
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"

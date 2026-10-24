@@ -138,6 +138,8 @@ uv run python -m app.eval check --suite small    # 检查评测集格式
 uv run python -m app.eval run --suite small      # 跑评测，报告写到 docs/eval/
 
 cd ../frontend && npm run build        # vue-tsc 类型检查 + 构建
+
+cd .. && python scripts/check_doc_refs.py   # 学习文档里的 文件:行号 引用是否还对得上（--fix 自动改正）
 ```
 
 测试全部使用假模型（`LLM_PROVIDER=fake`），不需要也不会读取真实 API Key。
