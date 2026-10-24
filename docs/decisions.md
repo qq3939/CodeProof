@@ -27,7 +27,7 @@
 - **备选**：调用 javac / JDT 做完整解析（需要依赖下载和构建，违反安全约束）；用 LSP（jdtls）（重、慢、仍需构建信息）。
 - **为什么选它**：Spring 项目里绝大多数调用是"注入的字段.方法()"，近似解析就能覆盖；画像里同时给出 `resolved_calls / calls` 比例，让用户知道准确度。
 - **代价与风险**：链式调用、Lambda、重载、继承来的字段等会解析失败或解析到多个候选；出题时链路可能缺一站。考官在追问前还会用工具查代码，部分弥补。
-- **相关代码**：`backend/app/analysis/code_model.py:63`、`backend/app/analysis/java_index.py:148`
+- **相关代码**：`backend/app/analysis/code_model.py:62`、`backend/app/analysis/java_index.py:104`
 
 ## D-003 结构化输出用 JSON 模式 + Pydantic 校验 + 重试，而不是依赖 function calling
 
@@ -81,7 +81,7 @@
 - **备选**：只按文件路径 + 修改时间判断（git 检出后修改时间不可靠）；每次全量重做（简单但贵）。
 - **为什么选它**：内容哈希天然正确；`topic_key` 让"同一个考点"跨快照可识别，掌握度也依赖它。
 - **代价与风险**：考点证据之外的文件改了也可能影响考点（例如被调用方改了），这种情况会被错误复用。
-- **相关代码**：`backend/app/analysis/pipeline.py:83`、`backend/app/analysis/pipeline.py:304`、测试 `backend/tests/test_integration_flow.py:220`
+- **相关代码**：`backend/app/analysis/pipeline.py:73`、`backend/app/analysis/pipeline.py:307`、测试 `backend/tests/test_integration_flow.py:220`
 
 ## D-009 限流用 Redis 固定窗口
 
@@ -108,7 +108,7 @@
 - **备选**：给测试代码降权（仍会混进来，规则更难解释）。
 - **为什么选它**：面试问的是业务代码；规则简单、可解释。
 - **代价与风险**："测试是怎么写的"这类问题出不来。
-- **相关代码**：`backend/app/analysis/spring_profile.py:108`、`backend/app/analysis/candidates.py:45`
+- **相关代码**：`backend/app/analysis/spring_profile.py:126`、`backend/app/analysis/candidates.py:45`
 
 ## D-012 MCP Server 用 mcp 2.x 的 MCPServer（即原 FastMCP）
 
@@ -208,7 +208,7 @@
   - 小仓库补题时仍会混进机制题；
   - 题库在分析时生成：线上已经分析好的快照，部署后选题范围马上生效，但题干还是旧问法，要重新分析才会换；增量分析会复用没改动的考点和题目，旧问法会一直沿用到这些考点的代码改动为止；
   - 新问法还没用真实模型验证过，修改前后的题目对比等线上重新分析后补上。
-- **相关代码**：`backend/app/analysis/generation.py:20`（`DEEP_DIVE_KINDS`）、`:40`（`DEEP_DIVE_STYLE`）、`backend/app/sessions/planner.py:204`（`pick_deep_dive`）、`backend/app/analysis/pipeline.py:414`（题库出题顺序）；测试 `backend/tests/test_unit_misc.py`（`test_pick_deep_dive_only_design_and_risk`）、`backend/tests/test_integration_flow.py`（`test_full_session_flow` 里检查出题计划的考点类型）
+- **相关代码**：`backend/app/analysis/generation.py:20`（`DEEP_DIVE_KINDS`）、`:40`（`DEEP_DIVE_STYLE`）、`backend/app/sessions/planner.py:204`（`pick_deep_dive`）、`backend/app/analysis/pipeline.py:417`（题库出题顺序）；测试 `backend/tests/test_unit_misc.py`（`test_pick_deep_dive_only_design_and_risk`）、`backend/tests/test_integration_flow.py`（`test_full_session_flow` 里检查出题计划的考点类型）
 
 ## D-020 功能定稿与冻结：加通用兜底、Python 支持和 AI 应用画像，最晚 11-01 冻结
 
@@ -258,4 +258,31 @@
   - 模型给的 `topic_key` 不稳定，同一个考点换个提交可能换了名字，掌握度和增量分析的复用效果比规则考点差；
   - 关键词搜索有噪声，要靠模型筛掉；
   - 出题模型临时故障也会让分析失败（v1 是"完成但没题"），需要用户手动重试。
-- **相关代码**：`backend/app/analysis/generic.py:110`（`generic_candidates`）、`backend/app/analysis/pipeline.py:222`（判断通用模式）、`:235`（一道题都没有就失败）、`backend/app/analysis/languages.py:86`（`primary_language`）、`backend/app/agents/interviewer.py:22`（`role`）；测试 `backend/tests/test_integration_generic.py`；前端 `frontend/src/api/types.ts`（`GENERIC_MODE_NOTE`）
+- **相关代码**：`backend/app/analysis/generic.py:110`（`generic_candidates`）、`backend/app/analysis/pipeline.py:224`（判断通用模式）、`:235`（一道题都没有就失败）、`backend/app/analysis/languages.py:86`（`primary_language`）、`backend/app/agents/interviewer.py:22`（`role`）；测试 `backend/tests/test_integration_generic.py`；前端 `frontend/src/api/types.ts`（`GENERIC_MODE_NOTE`）
+
+## D-022 语言接口与 Python 支持：先抽统一结构，FastAPI 只抽路由和依赖注入
+
+- **背景**：v1 的代码模型（`CodeModel`）、Spring 画像、改动理解都直接依赖 Java 的解析结果（`JavaFileIndex`、`parse_java`）。D-020 定下要支持 Python。如果为 Python 再写一套平行的流程，两边的链路、考点、改动理解很快就会不一致。
+- **方案**：
+  - **统一结构**（`lang_index.py`）：一个文件解析成 `FileIndex`，里面是符号（类、函数、方法、字段，含起止行号）、注解或装饰器、调用，外加导入别名和一个按语言约定的 `extras`。Java 和 Python 各写一个解析器，按扩展名分派（`parser_for`）；代码模型、画像、改动理解只认 `FileIndex`。表结构不变，加语言不用清库。
+  - **Python 解析**（`python_index.py`，tree-sitter-python）：
+    - 模块名按"相对包根目录的路径"推出；包根目录指有 `pyproject.toml`、`setup.py`、`setup.cfg`、`requirements*.txt` 的目录；
+    - `self.f()` 的接收者类型就是所在的类；`x = Foo()`、`x: Foo` 记成变量类型；
+    - `import x as y`、`from a import b`（含相对导入和写在函数里的导入）收进别名表，用来解析 `y.f()`；
+    - 装饰器存进注解，保留点号全名（`router.post`、`mcp.tool`）。
+  - **代码模型**：把 Python 的函数也当成可调用符号；Java 的"不写接收者就是调本类方法"这条规则不用在 Python 上；按别名解析 `模块.函数()`；`self.f()` 找不到时去父类里找。
+  - **FastAPI**（`fastapi_profile.py`）：只抽路由和依赖注入。
+    - 完整路径 = `include_router` 前缀 + `APIRouter` 前缀 + 装饰器路径；`include_router` 的参数解析不出是哪个路由器时（比如在循环里挂载），用这些调用共同的前缀当默认前缀；
+    - 参数里的 `Depends(x)` 和路由器上的 `dependencies=[Depends(x)]` 都作为链路的"依赖注入"一站。
+    - 接口格式和 Spring 一样，后面的链路和候选考点不区分框架。
+  - **改动理解**：`affected_symbols` 走同一个接口，Python 文件的改动也能找到受影响的函数。
+- **备选**：
+  - 用 Python 自带的 `ast`：遇到一处语法错误整个文件都解析不了，也只认当前解释器版本的语法；tree-sitter 容错，和 Java 那边是同一套做法。
+  - 用 Pyright、Jedi 这类类型推导工具：解析准确得多，但要装依赖、读虚拟环境，接近"构建"仓库，违背"不运行被分析的代码"；还很慢。
+  - FastAPI 之外也做 Django、Flask：D-020 定下只做 FastAPI，冻结之前做不完。
+- **为什么选它**：先抽接口再加语言，Java 的全部测试一行没改就通过了；Python 只多一个解析器和一个 FastAPI 抽取器，链路、候选考点、出题流程直接复用。
+- **代价与风险**：
+  - Python 的调用解析比 Java 更粗：鸭子类型、运行时赋值、装饰器包装、`getattr` 都解析不到。在本项目自己的后端上，3386 处调用解析到 837 处（2026-10-24 本机统计，不含内置函数）；
+  - FastAPI 的默认前缀是猜的：挂载时前缀各不相同又解析不出路由器，就不加前缀，路径会少一段；
+  - 一个仓库里有多个 Python 包、模块名重名时（比如测试夹具里也有 `app` 包），可能解析到别的包里的同名函数。
+- **相关代码**：`backend/app/analysis/lang_index.py:65`（`FileIndex`）、`:101`（`parser_for`）、`backend/app/analysis/python_index.py:73`（`source_roots`）、`:195`（`parse_python`）、`backend/app/analysis/code_model.py:142`（`_targets`）、`backend/app/analysis/fastapi_profile.py:58`（`extract_fastapi_endpoints`）、`backend/app/agents/change.py:109`（`affected_symbols`）；测试 `backend/tests/test_unit_analysis.py`（`test_python_*`、`test_fastapi_endpoints_and_chains`、`test_change_affected_python`）、`backend/tests/test_integration_languages.py`；夹具 `backend/tests/fixtures/mini-agent/`

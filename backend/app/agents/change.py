@@ -18,7 +18,7 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.analysis.java_index import parse_java
+from app.analysis.lang_index import CALLABLE_KINDS, parser_for
 from app.core.config import get_settings
 from app.core.db import session_scope
 from app.models import CodeRef, CodeSymbol, ExamSession, Repository, RepoSnapshot
@@ -107,13 +107,19 @@ def parse_diff(text: str) -> list[FileDiff]:
 
 
 def affected_symbols(fd: FileDiff, source: bytes) -> list[dict[str, Any]]:
-    """改动行落在哪些方法里。新增/修改的方法都算受影响。"""
-    idx = parse_java(source)
+    """改动行落在哪些方法（Python 还有函数）里。新增/修改的都算受影响。
+
+    走和分析流水线同一个语言接口（lang_index，D-022）：v1 只解析 Java，Python 文件的改动找不到受影响的函数。
+    """
+    parser = parser_for(fd.path)
+    if parser is None:
+        return []
+    idx = parser[1](source, fd.path)
     added = set(fd.added_lines)
     removed_at = {n for h in fd.hunks for n in h.removed_at}
     out = []
     for s in idx.symbols:
-        if s.kind not in ("method", "constructor"):
+        if s.kind not in CALLABLE_KINDS:
             continue
         touched = any(s.start_line <= n <= s.end_line for n in added | removed_at)
         if touched:
@@ -121,7 +127,7 @@ def affected_symbols(fd: FileDiff, source: bytes) -> list[dict[str, Any]]:
             out.append(
                 {
                     "name": s.name,
-                    "short": f"{owner}.{s.name}",
+                    "short": f"{owner}.{s.name}" if owner else s.name,
                     "start_line": s.start_line,
                     "end_line": s.end_line,
                     "signature": s.signature,
@@ -228,7 +234,7 @@ async def _change_topics(
         )
     async with session_scope() as db:
         for f in biggest:
-            if not f.path.endswith(".java") or not (work / f.path).exists():
+            if parser_for(f.path) is None or not (work / f.path).exists():
                 continue
             for sym in affected_symbols(f, (work / f.path).read_bytes())[:4]:
                 callers = (

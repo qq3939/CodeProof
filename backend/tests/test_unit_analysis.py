@@ -11,7 +11,9 @@ from app.agents.change import affected_symbols, parse_diff
 from app.analysis.candidates import build_candidates
 from app.analysis.code_model import CodeModel, FileEntry
 from app.analysis.java_index import parse_java
-from app.analysis.spring_profile import TextFile, build_profile, parse_config_keys
+from app.analysis.lang_index import parser_for
+from app.analysis.python_index import module_name, parse_python, relative_to_root, source_roots
+from app.analysis.spring_profile import TextFile, build_profile, parse_config_keys, profile_summary_md
 from app.core.errors import AppError
 from app.repos.url import normalize_repo_url
 
@@ -179,3 +181,84 @@ def test_parse_diff_and_affected() -> None:
     src = b"class A {\n  void f() {\n    g();\n  }\n  void g() { }\n}\n"
     names = [s["name"] for s in affected_symbols(files[0], src)]
     assert names == ["f"]
+
+
+# ---------------------------------------------------------------- Python（SPEC 7.3、7.4.2，D-022）
+AGENT = Path(__file__).parent / "fixtures" / "mini-agent"
+
+
+def _py_model() -> CodeModel:
+    files = []
+    for p in sorted(AGENT.rglob("*.py")):
+        rel = p.relative_to(AGENT).as_posix()
+        found = parser_for(rel)
+        assert found is not None
+        files.append(FileEntry(id=uuid.uuid4(), path=rel, index=found[1](p.read_bytes(), rel)))
+    return CodeModel(files)
+
+
+def test_python_index_symbols_and_calls() -> None:
+    idx = parse_python((AGENT / "app/agent/loop.py").read_bytes(), "app/agent/loop.py")
+    assert idx.language == "python" and idx.package == "app.agent.loop"
+    kinds = {s.qualified_name: s.kind for s in idx.symbols}
+    assert kinds["app.agent.loop.ChatAgent"] == "class"
+    assert kinds["app.agent.loop.ChatAgent.run"] == "method"
+    assert kinds["app.agent.loop.fetch_page"] == "function"
+    calls = {(c.name, c.receiver, c.receiver_type) for c in idx.calls}
+    assert ("run_tool", "self", "ChatAgent") in calls  # self.f() 的接收者类型就是所在的类
+    assert ("call_with_retry", None, None) in calls
+    assert idx.aliases["call_with_retry"] == "app.llm.call_with_retry"
+    tools = parse_python((AGENT / "app/agent/tools.py").read_bytes(), "app/agent/tools.py")
+    assert [a.name for s in tools.symbols for a in s.annotations] == ["tool", "tool"]
+    mcp = parse_python((AGENT / "app/mcp_server.py").read_bytes(), "app/mcp_server.py")
+    assert {a.name for s in mcp.symbols for a in s.annotations} == {"mcp.tool", "mcp.resource"}
+
+
+def test_python_relative_import_and_module_name() -> None:
+    idx = parse_python(b"from .graph import build as b\nfrom .. import core\n", "app/sessions/service.py")
+    assert idx.aliases == {"b": "app.sessions.graph.build", "core": "app.core"}
+    pkg = parse_python(b"from .x import y\n", "src/pkg/__init__.py")
+    assert pkg.package == "pkg" and pkg.aliases["y"] == "pkg.x.y"
+
+
+def test_fastapi_endpoints_and_chains() -> None:
+    m = _py_model()
+    build = [TextFile("pyproject.toml", (AGENT / "pyproject.toml").read_text(encoding="utf-8"))]
+    prof = build_profile(m, build, [], {}, {"python": len(m.files)})
+    eps = {(e["method"], e["path"]): e for e in prof["endpoints"]}
+    # include_router 的 /api + APIRouter 的 /chat + 装饰器的 /ask
+    assert set(eps) == {("POST", "/api/chat/ask"), ("POST", "/api/docs/upload"), ("GET", "/health")}
+    # 参数里的 Depends(get_db) 和路由器上的 dependencies=[Depends(verify_token)] 都算
+    assert [d["name"] for d in eps[("POST", "/api/chat/ask")]["depends"]] == ["get_db", "verify_token"]
+    chain = next(c for c in prof["chains"] if c["endpoint"] == "POST /api/chat/ask")
+    steps = [(s["layer"], s["symbol"]) for s in chain["steps"]]
+    assert ("dependency", "verify_token") in steps and ("dependency", "get_db") in steps
+    assert ("other", "ChatAgent.run") in steps  # agent = ChatAgent(...) 之后的 agent.run() 按局部变量类型解析
+    upload = next(c for c in prof["chains"] if c["endpoint"] == "POST /api/docs/upload")
+    assert "ingest" in [s["symbol"] for s in upload["steps"]]  # retriever.ingest() 按模块别名解析
+    assert {"FastAPI", "LangGraph", "MCP"} <= set(prof["stack"]["tech"])
+    assert f"Python {len(m.files)} 个" in profile_summary_md(prof)
+
+
+PY_DIFF = """diff --git a/app/agent/loop.py b/app/agent/loop.py
+--- a/app/agent/loop.py
++++ b/app/agent/loop.py
+@@ -20,1 +20,1 @@
+-            resp = call_with_retry(model.invoke, messages)
++            resp = call_with_retry(model.invoke, messages[-20:])
+"""
+
+
+def test_change_affected_python() -> None:
+    # 改动理解模式走同一个语言接口：v1 只认 .java，Python 文件的改动找不到受影响的函数
+    [fd] = parse_diff(PY_DIFF)
+    syms = affected_symbols(fd, (AGENT / "app/agent/loop.py").read_bytes())
+    assert [s["short"] for s in syms] == ["ChatAgent.run"]
+
+
+def test_python_source_roots() -> None:
+    # Python 代码不在仓库根目录时（本项目在 backend/ 下），模块名要相对包的根目录算，否则跨模块调用全都解析不到
+    roots = source_roots(["backend/pyproject.toml", "backend/app/main.py", "README.md", "svc/api/requirements.txt"])
+    assert roots == ["backend", "svc/api"]
+    assert module_name(relative_to_root("backend/app/sessions/graph.py", roots)) == "app.sessions.graph"
+    assert module_name(relative_to_root("tools/x.py", roots)) == "tools.x"

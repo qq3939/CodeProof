@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.analysis.code_model import CodeModel, SymRef
+from app.analysis.fastapi_profile import extract_fastapi_endpoints
 
 HTTP_ANN = {
     "GetMapping": "GET",
@@ -99,10 +100,27 @@ TECH_MAP = [
     ("websocket", "WebSocket"),
     ("spring-ai", "Spring AI"),
     ("langchain4j", "LangChain4j"),
+    # Python（D-022）：需要带上分隔符的写法避免误配，如 langchain- 不会配到 langchain4j
+    ("fastapi", "FastAPI"),
+    ("django", "Django"),
+    ("flask", "Flask"),
+    ("sqlalchemy", "SQLAlchemy"),
+    ("pydantic", "Pydantic"),
+    ("celery", "Celery"),
+    ("langgraph", "LangGraph"),
+    ("langchain-", "LangChain"),
+    ("llama-index", "LlamaIndex"),
+    ("mcp", "MCP"),
+    ("pgvector", "pgvector"),
+    ("chromadb", "Chroma"),
+    ("pymilvus", "Milvus"),
+    ("faiss", "FAISS"),
+    ("openai", "OpenAI SDK"),
+    ("anthropic", "Anthropic SDK"),
 ]
 
 
-TEST_PATH = re.compile(r"(^|/)(src/test|test|tests)/|Tests?\.java$")
+TEST_PATH = re.compile(r"(^|/)(src/test|test|tests)/|Tests?\.java$|(^|/)test_[^/]*\.py$|_test\.py$|(^|/)conftest\.py$")
 
 
 def is_test_path(path: str) -> bool:
@@ -137,7 +155,28 @@ def parse_dependencies(build_files: list[TextFile]) -> tuple[str | None, list[st
                 parts = m.group(1).split(":")
                 if len(parts) >= 2:
                     deps.append(f"{parts[0]}:{parts[1]}")
-    return build, sorted(set(deps))
+        elif f.path.endswith("pyproject.toml"):
+            build = build or "pyproject"
+            # [project] dependencies = ["fastapi>=0.110", ...] 和 poetry 的 [tool.poetry.dependencies] 两种写法
+            block = re.search(r"(?ms)^dependencies\s*=\s*\[(.*?)\]", f.text)
+            if block:
+                deps += [_py_dep(x) for x in re.findall(r"[\"']([^\"']+)[\"']", block.group(1))]
+            poetry = re.search(r"(?ms)^\[tool\.poetry\.dependencies\](.*?)(^\[|\Z)", f.text)
+            if poetry:
+                deps += [m for m in re.findall(r"(?m)^([A-Za-z0-9_.\-]+)\s*=", poetry.group(1)) if m != "python"]
+        elif re.search(r"requirements[^/]*\.txt$", f.path):
+            build = build or "pip"
+            for line in f.text.splitlines():
+                line = line.split("#", 1)[0].strip()
+                if line and not line.startswith("-"):
+                    deps.append(_py_dep(line))
+    return build, sorted({d for d in deps if d})
+
+
+def _py_dep(spec: str) -> str:
+    """fastapi[standard]>=0.110 → fastapi；包名统一小写、下划线换成连字符。"""
+    m = re.match(r"\s*([A-Za-z0-9_.\-]+)", spec)
+    return m.group(1).lower().replace("_", "-") if m else ""
 
 
 def tech_stack(deps: list[str]) -> list[str]:
@@ -353,7 +392,18 @@ def extract_usages(model: CodeModel, sources: dict[str, str]) -> dict[str, list[
 
 
 # ---------------------------------------------------------------- 链路
+PY_DATA_HINT = re.compile(r"(repositor|dao|crud|models?|db|database|store|storage)", re.I)
+
+
 def _layer(s: SymRef) -> str:
+    if s.file.index.language == "python":
+        # Python 没有 @Service 这类注解，只能按模块路径猜分层
+        p = s.path.lower()
+        if PY_DATA_HINT.search(p):
+            return "data"
+        if "service" in p:
+            return "business"
+        return "other"
     owner = s.owner
     if owner is None:
         return "other"
@@ -379,6 +429,12 @@ def build_chains(model: CodeModel, endpoints: list[dict[str, Any]], max_depth: i
             continue
         steps: list[dict[str, Any]] = [{"depth": 0, "layer": "entry", **_loc(start)}]
         visited = {start.id}
+        # FastAPI 的 Depends：框架在调用处理函数之前先调它们，算作入口后的第一站（D-022）
+        for dep in ep.get("depends", []):
+            ref = model.by_id.get(uuid.UUID(dep["symbol_id"])) if dep.get("symbol_id") else None
+            if ref is not None and ref.id not in visited:
+                visited.add(ref.id)
+                steps.append({"depth": 1, "layer": "dependency", **_loc(ref), "from": start.short})
         frontier = [start]
         for depth in range(1, max_depth + 1):
             nxt: list[SymRef] = []
@@ -433,15 +489,21 @@ def build_profile(
     lang_stats: dict[str, int],
 ) -> dict[str, Any]:
     build, deps = parse_dependencies(build_files)
-    endpoints = extract_endpoints(model)
+    endpoints = sorted(
+        extract_endpoints(model) + extract_fastapi_endpoints(model), key=lambda e: (e["path"], e["method"])
+    )
     components = extract_components(model)
     usages = extract_usages(model, sources)
     chains = build_chains(model, endpoints)
-    modules = Counter()
+    modules: Counter[str] = Counter()
     for f in model.files:
         pkg = f.index.package.split(".")
-        # 取包名第 4 段作为"模块"（com.example.app.<module>），短包名就取最后一段
-        modules[pkg[3] if len(pkg) > 3 else (pkg[-1] if pkg and pkg[0] else "(default)")] += 1
+        if f.index.language == "python":
+            # Python 取模块名前两段（app.sessions），再往下就是单个文件了
+            modules[".".join(pkg[:2]) or "(root)"] += 1
+        else:
+            # 取包名第 4 段作为"模块"（com.example.app.<module>），短包名就取最后一段
+            modules[pkg[3] if len(pkg) > 3 else (pkg[-1] if pkg and pkg[0] else "(default)")] += 1
     return {
         "stack": {"build": build, "dependencies": deps, "tech": tech_stack(deps)},
         "languages": lang_stats,
@@ -453,8 +515,9 @@ def build_profile(
         "chains": chains,
         "stats": {
             "files": len(model.files),
+            "files_by_language": dict(Counter(f.index.language for f in model.files)),
             "types": sum(1 for s in model.symbols if s.sym.kind in ("class", "interface", "enum", "record")),
-            "methods": sum(1 for s in model.symbols if s.sym.kind == "method"),
+            "methods": sum(1 for s in model.symbols if s.sym.kind in ("method", "function")),
             "calls": len(model.calls),
             "resolved_calls": sum(1 for c in model.calls if c.targets),
         },
@@ -491,9 +554,12 @@ def profile_summary_md(profile: dict[str, Any]) -> str:
                 f"- {label}：{len(items)} 处，例如 `{items[0]['symbol']}`（{items[0]['file']}:{items[0]['line']}）"
             )
     s = profile["stats"]
+    names = {"java": "Java", "python": "Python"}
+    by_lang = s.get("files_by_language") or {"java": s["files"]}
+    files = "、".join(f"{names.get(k, k)} {v} 个" for k, v in sorted(by_lang.items(), key=lambda x: -x[1]))
     lines += [
         "",
-        f"共 {s['files']} 个 Java 文件、{s['types']} 个类型、{s['methods']} 个方法；"
+        f"已建索引的源码文件：{files}；共 {s['types']} 个类型、{s['methods']} 个函数或方法；"
         f"调用 {s['calls']} 处，其中 {s['resolved_calls']} 处解析到了仓库内的符号。",
     ]
     return "\n".join(lines)

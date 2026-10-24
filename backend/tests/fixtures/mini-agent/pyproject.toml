@@ -1,0 +1,13 @@
+[project]
+name = "mini-agent"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110",
+    "langgraph>=0.2",
+    "langchain-core>=0.3",
+    "langchain-openai>=0.2",
+    "mcp>=1.0",
+    "pgvector>=0.3",
+    "httpx>=0.27",
+]

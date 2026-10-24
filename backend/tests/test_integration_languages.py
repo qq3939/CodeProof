@@ -1,7 +1,8 @@
-"""集成测试：通用兜底（SPEC 7.4.4、D-021）。
+"""集成测试：Java 以外的语言（SPEC 7.3、7.4，D-021、D-022）。
 
-Go 没有专门的符号索引和画像：v1 会显示"分析完成"却一道题都出不了。
-现在要么由通用兜底出题并标明"通用模式"，要么分析失败并写明原因。
+- Go 没有专门的符号索引和画像：v1 会显示"分析完成"却一道题都出不了。
+  现在要么由通用兜底出题并标明"通用模式"，要么分析失败并写明原因；
+- Python 有专门的符号索引和 FastAPI 画像：按接口链路出题，不走通用模式。
 """
 
 from __future__ import annotations
@@ -65,5 +66,27 @@ async def test_no_questions_fails_with_reason(app_ready: None) -> None:
         snap = await _submit(client, make_repo("readme-only", src))
         assert snap["status"] == "failed", snap
         assert "没能生成题目" in (snap["error"] or "")
+    finally:
+        await client.aclose()
+
+
+async def test_python_repo_uses_profile(app_ready: None) -> None:
+    client = await login(None, "pythonista")
+    try:
+        snap = await _submit(client, make_repo("mini-agent", FIXTURES / "mini-agent"))
+        assert snap["status"] == "ready", snap
+        st = snap["stats"]
+        assert st["analysis_mode"] == "profile" and st["primary_language"] == "python"
+        assert st["python_files"] > 0 and st["questions"] > 0
+
+        prof = (await client.get(f"/api/snapshots/{snap['id']}/profile")).json()["profile"]
+        assert "POST /api/chat/ask" in {f"{e['method']} {e['path']}" for e in prof["endpoints"]}
+        # 符号表里有 Python 的函数和方法，代码浏览、面试官查代码都能用
+        r = await client.post(
+            "/api/sessions", json={"snapshot_id": snap["id"], "mode": "deep_dive", "question_count": 1}
+        )
+        assert r.status_code == 200, r.text
+        await client.post(f"/api/sessions/{r.json()['session']['id']}/finish")
+        await drain()
     finally:
         await client.aclose()

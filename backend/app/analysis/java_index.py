@@ -4,16 +4,17 @@
 tree-sitter 给出具体语法树，容错好（有语法错误的文件也能解析大部分）。
 为什么不用 javac / JDT：那需要 JVM，也接近"构建"仓库，违背"不运行仓库代码"的边界。
 
-这个文件是纯函数：输入源码字节，输出结构化结果，不碰数据库，方便单测。
+这个文件是纯函数：输入源码字节，输出结构化结果（与语言无关的 FileIndex，见 lang_index），不碰数据库，方便单测。
 """
 
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
 
 import tree_sitter_java as tsjava
 from tree_sitter import Language, Node, Parser
+
+from app.analysis.lang_index import Annotation, Call, FileIndex, Symbol
 
 JAVA = Language(tsjava.language())
 
@@ -24,51 +25,6 @@ TYPE_KINDS = {
     "record_declaration": "record",
     "annotation_type_declaration": "annotation",
 }
-
-
-@dataclass
-class Annotation:
-    name: str  # 不带 @，如 Transactional
-    args: str  # 括号里的原文，如 propagation = Propagation.REQUIRES_NEW
-    line: int
-
-
-@dataclass
-class Symbol:
-    kind: str  # class/interface/enum/record/annotation/method/constructor/field
-    name: str
-    qualified_name: str
-    signature: str
-    start_line: int
-    end_line: int
-    annotations: list[Annotation] = field(default_factory=list)
-    parent: int | None = None  # 在 symbols 列表里的下标
-    # 类型级：父类和接口；字段级：字段类型；方法级：返回类型
-    type_text: str | None = None
-    supertypes: list[str] = field(default_factory=list)
-    # 方法级：参数名 → 类型，用来解析调用接收者
-    params: dict[str, str] = field(default_factory=dict)
-
-
-@dataclass
-class Call:
-    from_symbol: int  # 所在方法在 symbols 里的下标
-    name: str  # 被调用的方法名
-    receiver: str | None  # 接收者原文，如 userService、this.repo、Redisson
-    receiver_type: str | None  # 推断出的接收者类型（简单名）
-    line: int
-    # 链式调用 a.b().c() 时，最左边变量 a 的类型。画像识别 Redis 等用法时用它
-    root_type: str | None = None
-
-
-@dataclass
-class JavaFileIndex:
-    package: str
-    imports: list[str]
-    symbols: list[Symbol]
-    calls: list[Call]
-    # 方法体里出现的 synchronized / lock() 等并发写法（画像用）
-    sync_blocks: list[tuple[int, int]] = field(default_factory=list)  # (方法下标, 行号)
 
 
 def _text(node: Node | None, src: bytes) -> str:
@@ -145,7 +101,7 @@ def _params(node: Node, src: bytes) -> dict[str, str]:
     return out
 
 
-def parse_java(source: bytes) -> JavaFileIndex:
+def parse_java(source: bytes) -> FileIndex:
     tree = Parser(JAVA).parse(source)
     root = tree.root_node
     package = ""
@@ -302,4 +258,6 @@ def parse_java(source: bytes) -> JavaFileIndex:
         if child.type in TYPE_KINDS:
             visit_type(child, None, package)
 
-    return JavaFileIndex(package=package, imports=imports, symbols=symbols, calls=calls, sync_blocks=sync_blocks)
+    return FileIndex(
+        language="java", package=package, imports=imports, symbols=symbols, calls=calls, sync_blocks=sync_blocks
+    )

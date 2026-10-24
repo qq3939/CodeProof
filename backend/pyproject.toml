@@ -26,6 +26,7 @@ dependencies = [
     "sqlalchemy[asyncio]>=2.1.6",
     "tree-sitter>=0.26.0",
     "tree-sitter-java>=0.23.5",
+    "tree-sitter-python>=0.25.0",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -44,7 +45,8 @@ dev = [
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-extend-exclude = ["alembic/versions"]
+# tests/fixtures 里是被分析的示例仓库（含 Python 代码），不是本项目的代码，不检查
+extend-exclude = ["alembic/versions", "tests/fixtures"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "ASYNC"]
@@ -64,5 +66,7 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
+# 夹具仓库 mini-agent 自带 tests/，不能被当成本项目的测试收集
+norecursedirs = ["tests/fixtures"]
 pythonpath = ["."]
 filterwarnings = ["ignore::DeprecationWarning", "ignore::SyntaxWarning"]

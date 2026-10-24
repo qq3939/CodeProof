@@ -28,8 +28,9 @@ from app.analysis.candidates import build_candidates
 from app.analysis.code_model import CodeModel, FileEntry
 from app.analysis.generation import DEEP_DIVE_KINDS, generate_questions, generate_topics
 from app.analysis.generic import generic_candidates, generic_summary_md
-from app.analysis.java_index import Annotation, Call, JavaFileIndex, Symbol, parse_java
+from app.analysis.lang_index import INDEXED_LANGS, FileIndex, Parser, index_from_dict, parser_for
 from app.analysis.languages import LANG_BY_EXT, primary_language
+from app.analysis.python_index import relative_to_root, source_roots
 from app.analysis.spring_profile import TextFile, build_profile, profile_summary_md
 from app.core.config import get_settings
 from app.core.db import session_scope
@@ -62,38 +63,35 @@ class AnalysisError(Exception):
 
 
 # ---------------------------------------------------------------- 解析缓存
-_parse_cache: dict[str, JavaFileIndex] = {}
+_parse_cache: dict[str, FileIndex] = {}
 
 
 def _cache_dir() -> Path:
     return Path(get_settings().repo_storage_dir) / ".cache" / "parse"
 
 
-def _index_from_json(d: dict[str, Any]) -> JavaFileIndex:
-    syms = [Symbol(**{**s, "annotations": [Annotation(**a) for a in s["annotations"]]}) for s in d["symbols"]]
-    return JavaFileIndex(
-        package=d["package"],
-        imports=d["imports"],
-        symbols=syms,
-        calls=[Call(**c) for c in d["calls"]],
-        sync_blocks=[tuple(x) for x in d["sync_blocks"]],
-    )  # type: ignore[misc]
+def parse_cached(content: bytes, content_hash: str, lang: str, path: str, parse: Parser) -> tuple[FileIndex, bool]:
+    """按语言 + 内容哈希缓存解析结果：内存一级 + 磁盘二级。返回 (结果, 是否命中缓存)。
 
-
-def parse_cached(content: bytes, content_hash: str) -> tuple[JavaFileIndex, bool]:
-    """按内容哈希缓存解析结果：内存一级 + 磁盘二级。返回 (结果, 是否命中缓存)。"""
-    if content_hash in _parse_cache:
-        return _parse_cache[content_hash], True
-    fp = _cache_dir() / f"{content_hash}.json"
+    缓存键带上语言：v1 只有 Java，只用内容哈希。Python 的模块名取决于路径，所以还要带上路径。
+    """
+    key = (
+        f"{lang}-{content_hash}"
+        if lang == "java"
+        else f"{lang}-{content_hash}-{hashlib.sha256(path.encode()).hexdigest()[:12]}"
+    )
+    if key in _parse_cache:
+        return _parse_cache[key], True
+    fp = _cache_dir() / f"{key}.json"
     if fp.exists():
         try:
             # 显式 utf-8：Windows 上默认编码是 GBK，写入时遇到 GBK 表示不了的字符会直接抛错
-            idx = _index_from_json(json.loads(fp.read_text(encoding="utf-8")))
-            _parse_cache[content_hash] = idx
+            idx = index_from_dict(json.loads(fp.read_text(encoding="utf-8")))
+            _parse_cache[key] = idx
             return idx, True
         except Exception:  # noqa: BLE001 —— 缓存坏了就重新解析
             pass
-    idx = parse_java(content)
+    idx = parse(content, path)
     try:
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(json.dumps(dataclasses.asdict(idx), ensure_ascii=False), encoding="utf-8")
@@ -101,7 +99,7 @@ def parse_cached(content: bytes, content_hash: str) -> tuple[JavaFileIndex, bool
         pass
     if len(_parse_cache) > 20000:
         _parse_cache.clear()
-    _parse_cache[content_hash] = idx
+    _parse_cache[key] = idx
     return idx, False
 
 
@@ -177,6 +175,7 @@ async def run_analysis(snapshot_id: uuid.UUID, job_id: str | None = None) -> Non
         build_files: list[TextFile] = []
         config_files: list[TextFile] = []
         cache_hits = 0
+        py_roots = source_roots([p for p, _ in files])
         for path, data in files:
             ext = Path(path).suffix.lower()
             lang = LANG_BY_EXT.get(ext)
@@ -197,13 +196,16 @@ async def run_analysis(snapshot_id: uuid.UUID, job_id: str | None = None) -> Non
                 }
             )
             name = Path(path).name
-            if name == "pom.xml" or name.startswith("build.gradle"):
+            if name in ("pom.xml", "pyproject.toml") or name.startswith(("build.gradle", "requirements")):
                 build_files.append(TextFile(path, text))
             elif name.startswith(("application", "bootstrap")) and ext in (".yml", ".yaml", ".properties"):
                 config_files.append(TextFile(path, text))
-            if ext == ".java":
-                # CPU 密集的解析放到线程池（SPEC 5.3）
-                idx, hit = await asyncio.to_thread(parse_cached, data, h)
+            parser = parser_for(path)
+            if parser is not None:
+                # CPU 密集的解析放到线程池（SPEC 5.3）；有专门解析器的语言（Java、Python）才建符号索引
+                # Python 的模块名要相对包的根目录算（backend/app/x.py → app.x），见 source_roots
+                mod_path = relative_to_root(path, py_roots) if parser[0] == "python" else path
+                idx, hit = await asyncio.to_thread(parse_cached, data, h, parser[0], mod_path, parser[1])
                 cache_hits += int(hit)
                 entries.append(FileEntry(id=fid, path=path, index=idx))
                 sources[path] = text
@@ -243,9 +245,10 @@ async def run_analysis(snapshot_id: uuid.UUID, job_id: str | None = None) -> Non
             {
                 "analysis_mode": profile["analysis_mode"],
                 "primary_language": lang,
-                "java_files": len(entries),
+                "java_files": sum(1 for e in entries if e.index.language == "java"),
+                "python_files": sum(1 for e in entries if e.index.language == "python"),
                 "parse_cache_hits": cache_hits,
-                "loc": sum(r["lines"] for r in file_rows if r["language"] == "java"),
+                "loc": sum(r["lines"] for r in file_rows if r["language"] in INDEXED_LANGS),
             }
         )
         if s.retrieval_mode in ("vector", "hybrid"):

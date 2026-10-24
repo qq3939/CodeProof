@@ -56,7 +56,7 @@
 - **原因**：画像提取没有区分业务代码和测试代码。
 - **解决**：引入 `is_test_path`，测试代码不进画像和候选；同类候选设上限（见 D-011）。
 - **教训**：小样例跑通不代表真实仓库能用，要尽早拿真实仓库试。
-- **相关提交**：后端主体提交（`app/analysis/spring_profile.py:108`）
+- **相关提交**：后端主体提交（`app/analysis/spring_profile.py:126`）
 
 ## P-007 改动影响分析把删除的行算到了错误的方法上
 
@@ -129,3 +129,11 @@
 - **解决**：把 `alembic.ini` 里唯一一行中文注释改成英文，并注明这个文件要保持纯 ASCII。
 - **教训**：交给第三方库读的配置文件，编码由库决定；不确定时只写 ASCII。
 - **相关提交**：`修复：检查点建表加锁排队；Windows 本机跑通完整测试`
+
+## P-016 Python 代码不在仓库根目录时，跨模块调用全都解析不到
+
+- **现象**：用本项目自己的后端试 Python 解析（B0-10），接口都抽出来了，但"作答"接口的链路走到路由层就断了，调不到 `app/sessions/service.py` 里的 `resume_stream`；3386 处调用只解析到 461 处。
+- **原因**：模块名是按文件在仓库里的路径推的，`backend/app/sessions/service.py` 被叫成 `backend.app.sessions.service`；而代码里写的是 `from app.sessions import service`，别名表里记的是 `app.sessions.service`，两边对不上。夹具仓库的 Python 代码在根目录，测试测不出来。
+- **解决**：先找出包的根目录（有 `pyproject.toml`、`setup.py`、`setup.cfg`、`requirements*.txt` 的目录），模块名相对最近的根目录算。修完后解析到 837 处，链路一直走到服务层。加了 `test_python_source_roots`。
+- **教训**：夹具都放在"标准位置"时，测不出真实仓库的目录结构问题；新语言接进来之后，要拿一个真实仓库（最方便的就是本项目自己）跑一遍，看解析率和链路，而不只是看测试绿了。
+- **相关提交**：`功能：语言接口与 Python 支持`

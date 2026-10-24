@@ -239,7 +239,7 @@ LangGraph 检查点表由 `AsyncPostgresSaver.setup()` 创建。
   - 跳过二进制文件、超过 512 KB 的文件，以及 `node_modules`、`target`、`build`、`.git` 和生成代码的目录。
 - **存储**：路径为 `/data/repos/{repository_id}/{sha}`。后台清理任务按最近使用时间删除旧快照，磁盘总上限可配置，默认 10 GB。
 
-### 7.3 符号索引（tree-sitter）
+### 7.3 符号索引（tree-sitter，D-022）
 
 - **语言接口**（M8）：分析层（代码模型、候选考点、改动理解）只依赖一套与语言无关的接口：符号（类、函数、方法、字段，含起止行号）、注解或装饰器、调用（被调用的名字和接收者文本）。每种语言实现一次；表结构不变（`code_symbols.kind` 是字符串，`annotations` 是 JSONB），加语言不用清库。
 - **Java**：包、导入；类、接口、枚举、record；方法（签名、起止行号、注解）；字段；方法调用。
@@ -263,7 +263,7 @@ LangGraph 检查点表由 `AsyncPostgresSaver.setup()` 创建。
   - 并发：锁（synchronized、ReentrantLock、分布式锁）、线程池。
 - **链路**：从每个接口的处理方法出发，沿调用关系最多走 4 层，得到"接口 → 业务 → 数据访问或中间件"的链路。
 
-#### 7.4.2 FastAPI（M8）
+#### 7.4.2 FastAPI（M8，D-022）
 
 只抽路由（HTTP 方法、路径、处理函数）和依赖注入（`Depends` 的依赖链），用来生成接口链路，和 Spring 的"接口 → 业务 → 数据访问"同样处理。
 

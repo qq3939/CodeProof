@@ -40,7 +40,7 @@ SPEC 里程碑中还没达到完成标准的部分：
 | M6 | 用真实模型跑出的完整报告；人工标注的评测集 |
 | M7 | 没在 Claude Code 里通过 MCP 真正走过一遍；GitHub App 已决定搁置；10-24 起 Python 支持改为要做（B0-10） |
 
-**已解决的线上故障**（10-23，B0-4）：如果服务器 `.env` 里还是默认的 `EMBEDDING_MODEL=fake-embedding`，知识库的上传和检索会调用 `OpenAICompatibleProvider.embed`（`backend/app/llm/providers.py:183`），把请求发给 DeepSeek，而 DeepSeek 没有嵌入接口（`4ee5828` 之后改成直接报"还没有配置嵌入模型"；线上已换成 `text-embedding-v4`，不再有这个问题）。默认的 agentic 检索不调用嵌入，所以考核流程不受影响；只有 `RETRIEVAL_MODE` 设为 vector 或 hybrid 时，仓库分析才会建向量索引（`backend/app/analysis/pipeline.py:251`）。
+**已解决的线上故障**（10-23，B0-4）：如果服务器 `.env` 里还是默认的 `EMBEDDING_MODEL=fake-embedding`，知识库的上传和检索会调用 `OpenAICompatibleProvider.embed`（`backend/app/llm/providers.py:183`），把请求发给 DeepSeek，而 DeepSeek 没有嵌入接口（`4ee5828` 之后改成直接报"还没有配置嵌入模型"；线上已换成 `text-embedding-v4`，不再有这个问题）。默认的 agentic 检索不调用嵌入，所以考核流程不受影响；只有 `RETRIEVAL_MODE` 设为 vector 或 hybrid 时，仓库分析才会建向量索引（`backend/app/analysis/pipeline.py:254`）。
 
 ## 2. 已定决策（2026-10-23、10-24）
 
@@ -98,12 +98,12 @@ SPEC 里程碑中还没达到完成标准的部分：
 下面的 B0-8 至 B0-17 是 10-24 定下的功能定稿任务（第 2 节第 6–9 条），由用户在本项目文件夹单独开会话推进，按顺序做：
 
 - [x] **B0-8（AI）把功能定稿写进 SPEC 和 decisions**（`df2d1c6`）：按第 2 节第 6–8 条改 SPEC（3.1 功能边界、3.3 不做的、7.3 符号索引、7.4 画像、M7、15.2 数据集、15.3 指标里的基线）；新增 D-020（功能定稿与冻结规则，取代 D-017 里"Python 仓库支持不做"那一半），格式按已有条目。
-- [x] **B0-9（AI）通用兜底**（10-24，D-021）：
+- [x] **B0-9（AI）通用兜底**（`cfb6b1c`，D-021）：
   - 不认识的语言跳过符号索引和框架画像，由快模型根据目录结构、README、构建文件和 grep 结果生成候选考点。现在候选考点只从 Java 符号和 Spring 画像里来（`app/analysis/pipeline.py:204`、`app/analysis/candidates.py:45` 的 `build_candidates`），非 Java 仓库会显示"分析完成"却出不了题，要一并修掉；
   - 仓库页和考核页标明"通用模式"，说明题目质量比有画像的语言低；
   - 提示词按仓库主语言填写：`app/analysis/generation.py:21`、`:30` 和 `app/agents/interviewer.py:21` 现在写死了"Java 面试官"；
   - 加测试（假模型）：非 Java 的夹具仓库能出题，页面状态正确。
-- [ ] **B0-10（AI）语言接口 + Python 支持**：
+- [x] **B0-10（AI）语言接口 + Python 支持**（10-24，D-022）：
   - `app/analysis/code_model.py` 现在直接依赖 `JavaFileIndex`，先抽出与语言无关的接口，Java 实现照旧通过全部测试；
   - 加 tree-sitter-python 符号索引：函数、类、方法、装饰器（存进 `annotations`）、调用。表结构不用改（`app/models.py:145` 的 `CodeSymbol`：`kind` 是字符串，`annotations` 是 JSONB），线上不用清库；
   - FastAPI 只抽路由和依赖注入；

@@ -131,7 +131,8 @@ const usageRows = computed(() => {
 })
 const statusType = (s?: string) => (s === 'ready' ? 'success' : s === 'failed' ? 'danger' : 'warning')
 const LAYER_LABEL: Record<string, string> = {
-  entry: '入口', controller: 'Controller', service: 'Service', repository: '数据访问', middleware: '中间件', other: '其他',
+  entry: '入口', dependency: '依赖注入', controller: 'Controller', service: 'Service', business: '业务', data: '数据访问',
+  repository: '数据访问', middleware: '中间件', other: '其他',
 }
 </script>
 
@@ -178,7 +179,7 @@ const LAYER_LABEL: Record<string, string> = {
           <el-descriptions-item label="大小">{{ fmtBytes(snap?.size_bytes) }}</el-descriptions-item>
           <el-descriptions-item label="分析时间">{{ fmtTime(snap?.created_at) }}</el-descriptions-item>
           <el-descriptions-item label="类型数">{{ profile.stats?.types }}</el-descriptions-item>
-          <el-descriptions-item label="方法数">{{ profile.stats?.methods }}</el-descriptions-item>
+          <el-descriptions-item label="函数和方法">{{ profile.stats?.methods }}</el-descriptions-item>
           <el-descriptions-item label="调用数">{{ profile.stats?.calls }}</el-descriptions-item>
           <el-descriptions-item label="已解析调用">{{ profile.stats?.resolved_calls }}</el-descriptions-item>
         </el-descriptions>

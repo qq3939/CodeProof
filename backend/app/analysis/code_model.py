@@ -1,11 +1,12 @@
 """整个仓库的内存代码模型 + 近似调用关系解析（SPEC 7.3）。
 
-流水线先把每个文件解析成 JavaFileIndex，再在这里汇总成全仓库视图：
+流水线先把每个文件解析成与语言无关的 FileIndex（见 lang_index），再在这里汇总成全仓库视图：
 给每个符号分配 UUID、按名字建索引、把调用解析到候选符号。
 画像、链路、考点都基于这个模型计算，最后一次性写库。
 
-近似解析的局限（见 D-004）：只看"方法名 + 接收者类型 + 同包/导入"，
-接口多实现、重载、反射、动态代理时可能连错或连不上。
+近似解析的局限（见 D-002）：只看"方法名 + 接收者类型 + 同包/导入"，
+接口多实现、重载、反射、动态代理时可能连错或连不上；Python 的鸭子类型、运行时赋值、
+装饰器包装会让解析率更低（D-022）。
 """
 
 from __future__ import annotations
@@ -14,16 +15,14 @@ import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from app.analysis.java_index import Call, JavaFileIndex, Symbol
-
-TYPE_KINDS = {"class", "interface", "enum", "record", "annotation"}
+from app.analysis.lang_index import CALLABLE_KINDS, TYPE_KINDS, Call, FileIndex, Symbol
 
 
 @dataclass
 class FileEntry:
     id: uuid.UUID
     path: str
-    index: JavaFileIndex
+    index: FileIndex
     symbol_ids: list[uuid.UUID] = field(default_factory=list)
 
 
@@ -91,7 +90,7 @@ class CodeModel:
                     self.types_by_name[s.name].append(ref)
                     for sup in s.supertypes:
                         self.implementations[sup].append(ref)
-                elif s.kind in ("method", "constructor"):
+                elif s.kind in CALLABLE_KINDS:
                     self.methods_by_name[s.name].append(ref)
 
     def _file_symbol(self, f: FileEntry, idx: int) -> SymRef:
@@ -109,6 +108,26 @@ class CodeModel:
                     frontier.append(impl.sym.name)
         return out
 
+    def supertypes_of(self, type_name: str) -> set[str]:
+        """type_name 的所有（传递）父类型简单名，不含自身。Python 的 self.f() 常常调的是父类方法。"""
+        out: set[str] = set()
+        frontier = [type_name]
+        while frontier:
+            t = frontier.pop()
+            for ref in self.types_by_name.get(t, []):
+                for sup in ref.sym.supertypes:
+                    if sup not in out:
+                        out.add(sup)
+                        frontier.append(sup)
+        return out
+
+    @staticmethod
+    def qualified(m: SymRef) -> str:
+        """导入时用的全名：Java 的 包.类；Python 模块级函数的 模块.函数。"""
+        if m.owner is not None:
+            return f"{m.file.index.package}.{m.owner.sym.name}"
+        return f"{m.file.index.package}.{m.sym.name}"
+
     # ------------------------------------------------------------ 解析调用
     def _resolve(self) -> None:
         for f in self.files:
@@ -121,32 +140,42 @@ class CodeModel:
                     self._callers[t.id].append(rc)
 
     def _targets(self, caller: SymRef, c: Call) -> list[SymRef]:
-        cands = [m for m in self.methods_by_name.get(c.name, []) if m.sym.kind == "method"]
+        cands = [m for m in self.methods_by_name.get(c.name, []) if m.sym.kind in ("method", "function")]
         if not cands:
             return []
+        idx = caller.file.index
         owner_name = caller.owner.sym.name if caller.owner else None
         if c.receiver_type:
-            # 接收者类型已知：只要这个类型（或其实现类）里的同名方法
+            # 接收者类型已知：只要这个类型（或其实现类、父类）里的同名方法
             exact = [m for m in cands if m.owner and m.owner.sym.name == c.receiver_type]
             if exact:
                 return exact[:3]
             subs = self.subtypes(c.receiver_type)
             sub = [m for m in cands if m.owner and m.owner.sym.name in subs]
-            return sub[:3]
-        if c.receiver is None:
+            if sub:
+                return sub[:3]
+            sups = self.supertypes_of(c.receiver_type)
+            return [m for m in cands if m.owner and m.owner.sym.name in sups][:1]
+        if c.receiver is None and idx.language == "java":
+            # Java 里不写接收者就是调本类方法；Python 调本类方法必须写 self.，不写的是模块级函数
             same = [m for m in cands if m.owner and m.owner.sym.name == owner_name]
             if same:
                 return same[:1]
+        if c.receiver is not None and c.receiver in idx.aliases:
+            # Python 的 模块别名.函数()：到被导入的那个模块里找模块级函数
+            target = idx.aliases[c.receiver]
+            return [m for m in cands if m.owner is None and m.file.index.package == target][:1]
         if c.receiver is not None:
             # 链式调用、表达式接收者：类型推断不出来，宁可不连也不要乱连
             return []
-        pkg = caller.file.index.package
-        imports = set(caller.file.index.imports)
-        same_pkg = [m for m in cands if m.file.index.package == pkg]
+        # Python 的裸调用只可能是函数（模块级或嵌套），不可能是某个类的方法
+        if idx.language == "python":
+            cands = [m for m in cands if m.owner is None or m.owner.sym.kind not in TYPE_KINDS]
+        same_pkg = [m for m in cands if m.file.index.package == idx.package]
         if same_pkg:
             return same_pkg[:1]
-        imported = [m for m in cands if m.owner and f"{m.file.index.package}.{m.owner.sym.name}" in imports]
-        return imported[:1]
+        imports = set(idx.imports)
+        return [m for m in cands if self.qualified(m) in imports][:1]
 
     # ------------------------------------------------------------ 查询
     def calls_from(self, sym: SymRef) -> list[ResolvedCall]:
