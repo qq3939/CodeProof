@@ -332,3 +332,23 @@ def test_ai_profile_no_false_risks() -> None:
     _, prof = _ai_profile({"agent.py": SAFE_AGENT})
     assert prof["ai"]["risks"] == []
     assert [it["symbol"] for it in prof["ai"]["tools"]] == ["fetch"]
+
+
+def test_test_code_not_in_profile_or_topics() -> None:
+    # P-018：分析本项目自己时，测试夹具 mini-feed 的接口进了画像，模型据此编出了"点赞链路"的考点
+    files = []
+    for p in sorted(FIX.rglob("*.java")):
+        rel = "backend/tests/fixtures/mini-feed/" + p.relative_to(FIX).as_posix()
+        files.append(FileEntry(id=uuid.uuid4(), path=rel, index=parse_java(p.read_bytes())))
+    prof = build_profile(CodeModel(files), [], [], {}, {"java": len(files)})
+    assert prof["endpoints"] == [] and prof["chains"] == []
+
+    from app.analysis.generation import _topic_error
+    from app.tools.sandbox import Sandbox
+
+    topic = {
+        "title": "点赞链路",
+        "description": "",
+        "evidence": [{"path": "backend/tests/fixtures/mini-feed/src/A.java", "start_line": 1, "end_line": 2}],
+    }
+    assert "测试代码" in (_topic_error(Sandbox(FIX), topic) or "")

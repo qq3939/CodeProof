@@ -9,6 +9,7 @@ from typing import Any
 from app.agents.schemas import QuestionList, QuestionOut, TopicList, TopicOut
 from app.analysis import evidence as evcheck
 from app.analysis.languages import interviewer_title
+from app.analysis.spring_profile import is_test_path
 from app.core.text import truncate
 from app.llm.client import get_llm, wrap_data
 from app.llm.types import CallContext, LLMError
@@ -63,6 +64,14 @@ def _snippet_block(sandbox: Sandbox, evs: list[dict[str, Any]], limit_chars: int
     return "\n".join(parts), out
 
 
+def _topic_error(sandbox: Sandbox, d: dict[str, Any]) -> str | None:
+    """考点校验：证据要真实存在，而且不能落在测试代码里（模型补充的考点也一样，P-018）。"""
+    tests = [e["path"] for e in d["evidence"] if is_test_path(e["path"])]
+    if tests:
+        return f"证据在测试代码里（{tests[0]}），面试考的是业务代码，换成业务代码里的证据或者不要这个考点"
+    return evcheck.check(sandbox, d["evidence"], d.get("identifiers", []), d["title"] + " " + d["description"])
+
+
 async def generate_topics(
     sandbox: Sandbox,
     candidates: list[dict[str, Any]],
@@ -106,7 +115,7 @@ async def generate_topics(
     bad: list[tuple[TopicOut, str]] = []
     for t in topics:
         d = t.model_dump()
-        err = evcheck.check(sandbox, d["evidence"], d.get("identifiers", []), d["title"] + " " + d["description"])
+        err = _topic_error(sandbox, d)
         (bad.append((t, err)) if err else good.append(d))
     if bad:
         # 不通过的考点带上原因重新生成一次，还不通过就丢弃
@@ -128,7 +137,7 @@ async def generate_topics(
             tokens += usage2.total
             for t in out2.topics:
                 d = t.model_dump()
-                if not evcheck.check(sandbox, d["evidence"], d.get("identifiers", []), d["title"]):
+                if not _topic_error(sandbox, d):
                     good.append(d)
         except LLMError:
             pass

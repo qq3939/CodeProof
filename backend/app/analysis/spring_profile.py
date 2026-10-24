@@ -489,8 +489,11 @@ def build_profile(
     lang_stats: dict[str, int],
 ) -> dict[str, Any]:
     build, deps = parse_dependencies(build_files)
+    # 测试代码里的接口不进画像（D-011）：v1 只在关键用法里排除了测试代码，接口没排除，
+    # 本项目自己的测试夹具 mini-feed 的接口进了画像摘要，模型据此编出了"点赞链路"的考点（P-018）
     endpoints = sorted(
-        extract_endpoints(model) + extract_fastapi_endpoints(model), key=lambda e: (e["path"], e["method"])
+        (e for e in extract_endpoints(model) + extract_fastapi_endpoints(model) if not is_test_path(e["file"])),
+        key=lambda e: (e["path"], e["method"]),
     )
     components = extract_components(model)
     usages = extract_usages(model, sources)
