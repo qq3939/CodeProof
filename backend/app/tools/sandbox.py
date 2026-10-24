@@ -25,7 +25,7 @@ from app.core.config import get_settings
 from app.core.db import session_scope
 from app.core.errors import AppError
 from app.core.text import truncate
-from app.llm.types import CallContext, ToolSpec
+from app.llm.types import CallContext, LLMError, LLMFatalError, ToolSpec
 from app.models import CodeRef, CodeSymbol, RepoProfile
 from app.ops.trace import record_step
 
@@ -167,6 +167,9 @@ class Sandbox:
             "-M",
             "300",
             "--max-columns-preview",
+            # Windows 上 rg 默认输出反斜杠路径（如 .\src\a.py），和仓库里统一用的 src/a.py 对不上，检索结果全部匹配不到（P-020）
+            "--path-separator",
+            "/",
         ]
         for pat in SENSITIVE_PATTERNS:
             args += ["-g", f"!{pat}"]
@@ -357,6 +360,10 @@ class Sandbox:
                 result = f"(拒绝：{e.message})"
             except TypeError as e:
                 result = f"(参数错误：{e})"
+            except (LLMError, LLMFatalError) as e:
+                # vector_search、search_kb 要调嵌入模型：模型不可用（比如没配嵌入模型）时告诉 Agent 换别的工具，
+                # 而不是让整次检索、整场考核或整轮评测崩掉（P-019）
+                result = f"(这个工具暂时不可用：{e}。请改用 grep、find_symbol 等工具)"
         result = truncate(result, MAX_OUTPUT)
         await record_step(
             self.ctx,

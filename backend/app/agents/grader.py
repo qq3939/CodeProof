@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import re
 import statistics
 import uuid
 from collections import Counter
@@ -97,7 +98,18 @@ async def judge(
         temperature=temperature,
         payload={"key_points": question["key_points"], "answers": answers, "topic_key": question.get("topic_key")},
     )
+    if all(_says_unknown(a) for a in answers):
+        # 只回答了"不会"之类：没有任何关于代码的说法，谈不上矛盾。v1 的探针测试里，
+        # 模型两次把"不会"理解成"不会有问题"，在报告里记了一条矛盾（P-021）
+        out.contradictions = []
     return out, usage.total
+
+
+UNKNOWN_ANSWER = re.compile(r"^\s*(不知道|不会|不清楚|不了解|没了解过?|忘了|这个我不清楚|这个不会|pass|跳过)[。.！!，,\s]*$", re.I)
+
+
+def _says_unknown(answer: str) -> bool:
+    return bool(UNKNOWN_ANSWER.match(answer))
 
 
 async def grade_question(session_id: uuid.UUID, question_id: uuid.UUID, job_id: str | None = None) -> dict[str, Any]:

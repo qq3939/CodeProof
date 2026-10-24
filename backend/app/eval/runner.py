@@ -118,6 +118,11 @@ async def prepare_snapshot(suite: Suite) -> tuple[uuid.UUID, Path]:
     user = await _eval_user()
     async with session_scope() as db:
         res = await submit_repo(db, user, url, cfg.get("ref"))
+        if res["status"] == "failed":
+            # 提交接口对已经失败的快照只返回原样，重试要走"检查新提交"那条路
+            from app.repos.service import refresh_repo
+
+            res = await refresh_repo(db, user, res["repository_id"])
     await drain(timeout=3600)
     async with session_scope() as db:
         snap = await db.get(RepoSnapshot, res["snapshot_id"])
@@ -145,6 +150,8 @@ async def _usage(job_id: str) -> dict[str, Any]:
 class Report:
     metrics: dict[str, Any] = field(default_factory=dict)
     failures: dict[str, list[str]] = field(default_factory=dict)
+    # 逐个回答的明细（探针套件要看每种回答的得分、矛盾有没有被指出来，B0-15）
+    per_answer: list[dict[str, Any]] = field(default_factory=list)
 
     def fail(self, key: str, msg: str) -> None:
         self.failures.setdefault(key, []).append(msg)
@@ -202,6 +209,17 @@ async def eval_grading(suite: Suite, sandbox: Sandbox, run_id: str, rep: Report)
         gold_pts += lab["points"]
         pred_scores.append(out.score)
         gold_scores.append(lab["score"])
+        rep.per_answer.append(
+            {
+                "id": a["id"],
+                "quality": a.get("quality", ""),
+                "score": out.score,
+                "gold": lab["score"],
+                "points": "/".join(verdicts),
+                "gold_points": "/".join(lab["points"]),
+                "contradictions": "；".join(c.claim for c in out.contradictions)[:120],
+            }
+        )
         if abs(out.score - lab["score"]) >= 30:
             rep.fail("grading", f"{a['id']}（{a['quality']}）：系统 {out.score} 分，人工 {lab['score']} 分")
     # 稳定性：同一个回答判 3 次
@@ -437,6 +455,19 @@ def render(suite: Suite, run_id: str, cfg: dict[str, Any], rep: Report) -> str:
     ):
         if key in m:
             table(title, m[key])
+    if rep.per_answer:
+        lines += [
+            "## 逐个回答",
+            "",
+            "| 回答 | 类型 | 系统得分 | 标注得分 | 系统要点判定 | 标注要点判定 | 指出的矛盾 |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for r in rep.per_answer:
+            lines.append(
+                f"| {r['id']} | {r['quality']} | {r['score']} | {r['gold']} | {r['points']} | {r['gold_points']} "
+                f"| {r['contradictions'] or '（无）'} |"
+            )
+        lines.append("")
     if "retrieval" in m:
         lines += [
             "## 检索（三种模式对比）",
@@ -493,9 +524,18 @@ async def run(suite_name: str, retrieval: str | None, baseline: bool) -> dict[st
         await db.commit()
         run_id = str(er.id)
     rep = Report()
+    # 先记成失败：仓库分析失败时抛的是 SystemExit，不是 Exception，下面的 except 接不住，
+    # 不先赋值的话 finally 里会报"status 未赋值"，把真正的错误盖掉
+    status, path = "failed", None
     try:
         snap_id, root = await prepare_snapshot(suite)
-        sandbox = Sandbox(root, snap_id, ctx=CallContext(node="eval", job_id=f"eval:{run_id}"), allow_vector=True)
+        # 只在评测 vector / hybrid 时才给 Agent 开向量检索工具，只评 agentic 时不依赖嵌入模型
+        sandbox = Sandbox(
+            root,
+            snap_id,
+            ctx=CallContext(node="eval", job_id=f"eval:{run_id}"),
+            allow_vector=any(m in ("vector", "hybrid") for m in modes),
+        )
         await eval_question_quality(suite, snap_id, sandbox, rep)
         await eval_grading(suite, sandbox, run_id, rep)
         if baseline:

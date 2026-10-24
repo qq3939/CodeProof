@@ -207,3 +207,27 @@ def test_pick_deep_dive_only_design_and_risk() -> None:
     chosen = pick_deep_dive(few, 3, {}, "medium")
     assert len(chosen) == 3 and chosen[0]["kind"] == "design"
     assert [i["kind"] for i in chosen[1:]] == ["mechanism", "mechanism"]
+
+
+async def test_sandbox_tool_llm_error_becomes_result(sandbox: Sandbox) -> None:
+    # P-019：没配嵌入模型时 Agent 调了 vector_search，v1 整轮评测直接崩掉；现在要变成工具结果让 Agent 换工具
+    async def broken(**_: object) -> str:
+        raise LLMFatalError("还没有配置嵌入模型")
+
+    sandbox.vector_search = broken  # type: ignore[method-assign]
+    out = await sandbox.call("vector_search", {"query": "x"})
+    assert "暂时不可用" in out and "grep" in out
+
+
+async def test_sandbox_grep_uses_forward_slashes() -> None:
+    # P-020：Windows 上 rg 默认输出反斜杠路径，检索结果和证据位置全都对不上
+    out = await Sandbox(FIX).grep("saveLikeCount")
+    assert out.startswith("src/main/java/") and "\\" not in out.split(":")[0]
+
+
+def test_unknown_answer_is_not_a_claim() -> None:
+    # P-021：模型把"不会"读成"不会有问题"，记成了一条矛盾；只回答不会的，矛盾列表要清空
+    from app.agents.grader import _says_unknown
+
+    assert all(_says_unknown(a) for a in ["不会", "不知道。", "这个我不清楚", " pass "])
+    assert not any(_says_unknown(a) for a in ["不会有问题，Spring 会一起回滚", "我不知道具体实现，但应该是用了 Redis"])
