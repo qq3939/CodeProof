@@ -1,6 +1,6 @@
 # CodeProof（码证）
 
-代码理解考核 Agent：提交一个 Java / Spring Boot 仓库，AI 当考官，**以代码为证据**考你对这个仓库的理解——会追问、会给分级提示、会查代码核对你的说法，结束后给出逐要点的评分报告和复习计划。
+代码理解考核 Agent：提交一个公开的代码仓库（Java / Spring Boot、Python / FastAPI 和 Agent 项目，其他语言走通用模式），AI 当考官，**以代码为证据**考你对这个仓库的理解——会追问、会给分级提示、会查代码核对你的说法，结束后给出逐要点的评分报告和复习计划。
 
 技术栈：Python 3.12 + FastAPI + LangGraph + PostgreSQL（pgvector）+ Redis（arq）+ Vue 3。完整规格见 [docs/SPEC.md](docs/SPEC.md)，当前进度和后续计划见 [docs/ROADMAP.md](docs/ROADMAP.md)。
 
@@ -80,6 +80,14 @@ sequenceDiagram
 ```
 
 追问先完整生成、过了防泄露检查再切块推送，所以看起来是流式，实际首字要等整段生成完（[D-004](docs/decisions.md)）。检查点存在 Postgres 里，刷新页面或重启 api 后能从上一次停下的地方接着答（[D-006](docs/decisions.md)）。
+
+## 支持的语言
+
+| 语言 | 符号索引 | 画像 | 说明 |
+| --- | --- | --- | --- |
+| Java | ✅ tree-sitter | Spring：接口、事务、缓存、Redis、消息、定时、并发、调用链 | |
+| Python | ✅ tree-sitter | FastAPI：路由和依赖注入；AI 应用：工具调用、Agent 循环、状态图、多 Agent、MCP、RAG、上下文与安全、调用工程化，外加三条风险规则 | 调用解析比 Java 粗（D-022） |
+| 其他 | ❌ | 通用模式：由模型根据目录、README、主要源码和关键词搜索挑考点，照样校验证据行号 | 页面会标明"通用模式"，题目质量比有画像的语言低（D-021） |
 
 ## 快速开始（Docker）
 
@@ -193,7 +201,7 @@ docs/             SPEC、设计决策、踩坑记录、学习文档、评测报�
 | M5 工程化 | ✅ | 增量分析、降级重试、限流配额、运维页、注入防护 |
 | M6 评测 | ⚠️ 部分 | 运行器、指标、对比、报告、CI 小样本都已完成；**缺**：用真实模型（DeepSeek）跑出的完整报告，以及 spring-petclinic 和 [code-nest](https://github.com/qq3939/code-nest) 各 20 题的人工标注评测集。技术派只用来测分析耗时和成本，不做标注 |
 | M7 泛化 | ⚠️ 部分 | 改动理解（提交范围 + 公开 PR）、MCP、API 令牌已完成；**缺**：在 Claude Code 里通过 MCP 实际走一遍。GitHub App 接入私有仓库已搁置；Python 支持 10-24 改为要做，移到 M8 |
-| M8 语言扩展与 AI 应用画像 | ⏳ 进行中 | 2026-10-24 定稿：通用兜底（其他语言也能出题）、Python 支持、AI 应用画像，最晚 11-01 冻结（D-020） |
+| M8 语言扩展与 AI 应用画像 | ⚠️ 部分 | 通用兜底、Python 与 FastAPI、AI 应用画像的代码和测试已完成（D-021～D-023）；**缺**：用真实模型对本项目和开源 Agent 项目试出题、用户验收；最晚 11-01 冻结（D-020） |
 
 ## 还需要你提供或确认的
 
